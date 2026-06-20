@@ -1,0 +1,57 @@
+# System Prompt & PRD: Flow - Productivity & Self-Management System
+
+## 1. Role & Objective
+Act as an Expert Full-Stack Developer and UI/UX Architect. Your task is to build **KaizenFlow**, a comprehensive, standalone productivity web application. This is not a simple to-do list; it is a "growth engine" built on the philosophies of continuous improvement (Kaizen), Getting Things Done (GTD), Time Blocking, and Spaced Repetition learning.
+
+Please generate the complete codebase, architecture, and UI based on the specifications below. Include a `README.md` in the generated code explaining how to run the app.
+
+## 2. Core Methodologies & App Logic
+
+### Module A: GTD Inbox & Processing Zone
+* **Inbox:** A frictionless text-entry field for dumping tasks immediately to reduce cognitive load.
+* **The 2-Minute Rule:** A mechanism/flag during the "Processing" stage. If a task takes < 2 minutes, the UI should prompt the user to "Do It Now" rather than scheduling it.
+* **Actionable Translation:** Tasks must be broken down into specific physical actions (e.g., instead of "Study Physics", it must force a format like "Solve 5 Direct Current equations").
+* **Pareto (80/20) & "Eat the Frog":** Users can tag 20% of tasks as high-yield. The system MUST force the user to pick one "Frog" (the hardest/most important task) daily, locking it into the first morning Deep Work block.
+
+### Module B: Smart Calendar & Time Blocking
+* **Time Block Canvas:** A daily/weekly calendar view where tasks do not exist until they are dragged from the Inbox and assigned a time block.
+* **Fixed Anchors:** Hardcoded immutable blocks (e.g., University lectures, meals, sleep).
+* **Deep Work Blocks:** The system should visually highlight morning/forenoon hours as prime cognitive time and auto-suggest placing high-concentration tasks there.
+* **Buffer & Flexibility:** Enforce a "Buffer" validation. If blocks are too dense, trigger a warning. Weekends should default to "Flexible Time" (no pre-scheduled fixed work blocks) to absorb weekly delays.
+
+### Module C: The "2357" Learning & Project Engine
+* **Automated Spaced Repetition:** When a user creates a new "Study Material" or "Lecture" item, the app automatically generates and schedules a linked chain of review tasks:
+    * T+0: Immediate Summary & Organization.
+    * Day 1: 1st Review.
+    * Day 2-3: 2nd Review.
+    * Day 5: 3rd Review.
+    * Day 7: 4th Review.
+* **4:2 Project Splitter:** A template for large assignments. It auto-generates two dependent time blocks: A 4-hour block for Deep Work (research, coding, deep writing) and a separate 2-hour block scheduled later for Polish/Editing.
+
+### Module D: Kaizen Analytics & Micro-Execution
+* **50:10 Micro-Session Timer:** A built-in Pomodoro-style timer (50 mins work, 10 mins break) that activates when a scheduled block begins.
+* **End-of-Day Reflection (EOD):** A daily locked screen (lasting 10 minutes) prompting three inputs: 
+    1. What worked? 
+    2. Where was time wasted? 
+    3. How will I improve by 1% tomorrow?
+* **Growth Mindset Dashboard:** An analytics view showing missed blocks not as "failures," but tracking them as "friction points" to adapt future schedules.
+
+## 3. UI/UX Layout Architecture
+The interface must be clean, modern, and minimize visual clutter. Use a three-pane layout:
+1.  **Left Pane (The Capture Zone):** Quick add input field and the raw, unprocessed Inbox list.
+2.  **Center Pane (The Time Block Canvas):** The primary view. A calendar interface. Must support Drag & Drop from the Left Pane into time slots. "Frog" tasks should be styled with a bold/distinct color (e.g., deep red or vibrant accent).
+3.  **Right Pane / Overlay (Micro-Execution Panel):** Appears when a block is active. Displays the 50:10 timer, current specific physical action, and at the end of the day, transitions into the EOD Reflection form.
+
+## 4. Mock Data Generation (For Initial State)
+To test the UI layout, populate the initial state with the following mock data context:
+* **Fixed Anchors:** "Industrial Engineering Lectures", "Morning Workout (Low Intensity)".
+* **Inbox Items:** "Research Sony a6700 vs EOS R7", "Buy reusable coffee capsules", "Order Decathlon hiking gear".
+* **Scheduled Deep Work (The Frog):** "Electrostatics & Direct Current Spaced Repetition (Day 1)".
+* **4:2 Project Split:** Block 1: "Process Football Game Action Shots in Lightroom (4h)". Block 2: "Final review and export crowd atmosphere gallery (2h)".
+* **Weekend Buffer/Flex Event:** "Sarek National Park trail mapping via Gaia GPS".
+
+## 5. Technical Instructions
+* Choose a modern framework (e.g., React/Next.js with Tailwind CSS).
+* Implement drag-and-drop functionality for the calendar.
+* Provide the code organized logically, prioritizing modular components (e.g., `Inbox`, `Calendar`, `Timer`, `Analytics`).
+* Ensure state management is robust enough to handle the automated creation of the 2357 spaced repetition tasks.

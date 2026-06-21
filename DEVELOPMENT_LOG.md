@@ -20,19 +20,14 @@ Skipping the GitHub sync step is a violation of this protocol. No exceptions.
 ## Historical Log
 
 ### [2026-06-21] Phase 15: Core Stability & Task Management Polish
-- **Firestore Listener Race Condition (`src/lib/db.ts`):** Fixed a critical race condition where async IDB syncing delayed React's `setTasks`, causing UI state to be overwritten and tasks/drags to disappear. `onSnapshot` now triggers state updates immediately while IDB runs in the background. Added explicit error handling and console logging to surface Firestore security rule or write rejections.
-- **Service Worker Reliability (`public/sw.js`):** Added a URL scheme guard (`startsWith('http')`) to the fetch listener to prevent `chrome-extension://` requests from crashing the Cache API and blocking offline/online sync.
-- **Drag & Drop Responsiveness (`src/app/page.tsx`):** Implemented optimistic React state updates (`setTasks`) for all drag interactions (Inbox → Calendar, Rescheduling within Calendar, Calendar → Inbox) guaranteeing zero-latency UI feedback before Firestore round-trips. Rewrote `handleDragEnd` to correctly use `tasks` state lookups instead of ID prefix checks (which broke when tasks moved).
-- **TypeScript Fix (`src/lib/db.ts`):** Updated `Task` interface to allow `string | null` for `scheduledDay`, `startTime`, and `endTime`. This satisfies TypeScript errors when explicitly unscheduling tasks and deleting their time data in Firestore.
-- **Smart Suggest Enhancements (`src/app/page.tsx`):**
-  - Completely rewrote the algorithm to use a deterministic gap-finding method `findNextAvailableSlot`.
-  - Updated to evaluate available time slots at 15-minute granularity (06:00–22:00) for tighter packing.
-  - Added a two-pass strategy: pass 0 applies strict energy/friction routing, pass 1 relaxes constraints to prevent tasks from becoming stuck when ideal slots are full.
-  - Made the algorithm strictly non-blocking: it generates a schedule map, applies it optimistically to React state immediately, and fires background syncs (stops the loading spinner instantly).
-  - Explicitly respects the "Flexibility Zone" rule by refusing to auto-schedule deep work/frogs on weekends.
-- **Fixed Blocks / Anchors (`src/app/page.tsx` & `src/components/CaptureZone.tsx`):** Implemented `isFixedAnchor` logic. Users can now create "Fixed Blocks" (e.g. Morning Routine) from the Capture Zone. These blocks are immutable, visually styled as dashed locked cards with padlocks, cannot be dragged, and act as hard boundaries that Smart Suggest will schedule around.
+- **Firestore & Drag-and-Drop:** Implemented optimistic React state updates for all drag interactions and decoupled `onSnapshot` from IndexedDB. This eliminates race conditions and provides zero-latency UI feedback.
+- **Service Worker Reliability:** Fixed Cache API crashes by ignoring non-HTTP (`chrome-extension://`) requests.
+- **Smart Suggest Algorithm:** Rewrote to use deterministic 15-minute gap-finding with a two-pass scheduling strategy (strict routing first, then relaxed). Processes instantly in the background and avoids scheduling deep work on weekends.
+- **Fixed Blocks (Anchors):** Added support for immutable time blocks (e.g., Morning Routine) that cannot be dragged and serve as hard boundaries for Smart Suggest.
+- **TypeScript Null Safety:** Updated `Task` schema and utility functions (`parseHour`) to properly handle `null` values for unscheduled tasks.
 - **Task Deletion & Completion (`CaptureZone.tsx` & `MicroExecutionPanel.tsx`):** 
   - Added hover-reveal delete (✕) buttons with `window.confirm` guards to inbox items, allowing immediate removal of tasks.
+- **Cognitive Load Guard Fix:** Corrected an inconsistency in `page.tsx`'s drag-and-drop overlap detection where existing "frog" or "deep" blocks shorter than 120 minutes were incorrectly bypassing the cognitive load warning when another heavy task was dropped next to them.
   - Wired the Pomodoro timer's checkmark (✓) button to a new `onCompleteTask` prop. Clicking it instantly archives the task in local state, clears the active execution panel, and updates Firestore in the background.
 - **Optimistic Inbox Capture:** Pressing Enter in the Inbox now instantly renders the new task card before waiting for network confirmation.
 

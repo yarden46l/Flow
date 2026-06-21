@@ -31,24 +31,24 @@ export interface Task {
   title: string;
   status: "inbox" | "scheduled" | "archived";
   createdAt: string;
-  isFrog?: boolean;
-  duration?: number;
-  projectGroupId?: string;
-  projectBlockType?: "deep" | "polish";
+  isFrog?: boolean | null;
+  duration?: number | null;
+  projectGroupId?: string | null;
+  projectBlockType?: "deep" | "polish" | null;
   scheduledDay?: string | null; // "Wed", "Sat", etc.
   startTime?: string | null;
   endTime?: string | null;
-  type?: "fixed" | "frog" | "deep" | "polish" | "flex";
-  colorClass?: string;
-  description?: string;
-  isCompleted?: boolean;
-  completedAt?: string;
+  type?: "fixed" | "frog" | "deep" | "polish" | "flex" | null;
+  colorClass?: string | null;
+  description?: string | null;
+  isCompleted?: boolean | null;
+  completedAt?: string | null;
   /**
    * When true, this block is immutable: it cannot be dragged to a new slot,
    * and the auto-scheduler will treat its time window as occupied.
    * Defaults to false / undefined (treated as false).
    */
-  isFixedAnchor?: boolean;
+  isFixedAnchor?: boolean | null;
   /**
    * Cognitive energy demand of this task.
    *  HIGH   — complex problem-solving, physics, deep coding, heavy calculations
@@ -56,26 +56,26 @@ export interface Task {
    *  LOW    — admin, email, organising notes, errands
    * Used by the Energy-Aware Smart Suggest to route tasks to appropriate time windows.
    */
-  energyLevel?: "HIGH" | "MEDIUM" | "LOW";
+  energyLevel?: "HIGH" | "MEDIUM" | "LOW" | null;
   /**
    * When true, this task is critical during an active Sprint Mode period.
    * Non-critical tasks are grayed-out / filtered when Sprint Mode is enabled.
    */
-  isSprintCritical?: boolean;
+  isSprintCritical?: boolean | null;
   /**
    * Batch Processing Engine fields.
    * When isBatchTask is true, the Micro-Execution Panel replaces the 50:10
    * timer with a quantitative stepper UI that tracks progress toward batchTotal.
    */
-  isBatchTask?: boolean;
+  isBatchTask?: boolean | null;
   /** The target volume (e.g. 40 pages, 20 equations). */
-  batchTotal?: number;
+  batchTotal?: number | null;
   /** Completed volume so far — updated incrementally via the stepper. */
-  batchCompleted?: number;
+  batchCompleted?: number | null;
   /** Human-readable unit label displayed on the progress bar (e.g. "pages", "problems"). */
-  batchUnitName?: string;
+  batchUnitName?: string | null;
   /** Timestamp for offline sync conflict resolution */
-  updatedAt?: number;
+  updatedAt?: number | null;
 }
 
 const TASKS_COLLECTION = "tasks";

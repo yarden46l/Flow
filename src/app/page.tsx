@@ -155,15 +155,18 @@ export default function Home() {
       title: text,
       status: "inbox",
       createdAt: "now",
-      duration,
-      isFrog,
+      duration: duration ?? null,
+      isFrog: isFrog ?? null,
       energyLevel: energyLevel ?? "MEDIUM",
       isSprintCritical: isSprintCritical ?? false,
       isBatchTask: isBatchTask ?? false,
-      batchTotal: isBatchTask ? (batchTotal ?? 10) : undefined,
-      batchCompleted: isBatchTask ? 0 : undefined,
-      batchUnitName: isBatchTask ? (batchUnitName ?? "items") : undefined,
+      batchTotal: isBatchTask ? (batchTotal ?? 10) : null,
+      batchCompleted: isBatchTask ? 0 : null,
+      batchUnitName: isBatchTask ? (batchUnitName ?? "items") : null,
       userId: user.uid,
+      scheduledDay: null,
+      startTime: null,
+      endTime: null,
     };
 
     // Optimistically update local React state immediately so the task appears
@@ -188,7 +191,12 @@ export default function Home() {
         energyLevel: "HIGH" as const,
         isSprintCritical: true,
         userId: user.uid,
+        scheduledDay: null,
+        startTime: null,
+        endTime: null,
       }));
+
+      setTasks((prev) => [...prev, ...reviews]);
       reviews.forEach((r) => addTask(r));
     }
   };
@@ -256,6 +264,9 @@ export default function Home() {
       projectGroupId,
       projectBlockType: "deep",
       userId: user.uid,
+      scheduledDay: null,
+      startTime: null,
+      endTime: null,
     };
     const polishBlock: Task = {
       id: `inbox-item-polish-${Date.now()}`,
@@ -266,7 +277,12 @@ export default function Home() {
       projectGroupId,
       projectBlockType: "polish",
       userId: user.uid,
+      scheduledDay: null,
+      startTime: null,
+      endTime: null,
     };
+
+    setTasks((prev) => [...prev, deepBlock, polishBlock]);
     addTask(deepBlock);
     addTask(polishBlock);
   };
@@ -449,7 +465,7 @@ export default function Home() {
       setTasks((prev) =>
         prev.map((t) =>
           t.id === activeId
-            ? { ...t, status: "inbox" as const, scheduledDay: undefined, startTime: undefined, endTime: undefined }
+                ? { ...t, status: "inbox" as const, scheduledDay: null, startTime: null, endTime: null }
             : t
         )
       );
@@ -573,10 +589,9 @@ export default function Home() {
       };
 
       // 3. Cognitive Load Warning
-      const HIGH_FOCUS_TYPES = ["frog", "deep"];
       const HEAVY_THRESHOLD_MINS = 120;
       const adjacentHeavyBlock = tasks
-        .filter((e) => e.status === "scheduled" && e.scheduledDay === targetDateStr && HIGH_FOCUS_TYPES.includes(e.type || "deep") && e.id !== activeId)
+        .filter((e) => e.status === "scheduled" && e.scheduledDay === targetDateStr && e.id !== activeId)
         .find((e) => {
           if (!e.startTime || !e.endTime) return false;
           const [esh, esm] = e.startTime.split(":").map(Number);
@@ -584,7 +599,10 @@ export default function Home() {
           const evStartMins = esh * 60 + esm;
           const evEndMins = eeh * 60 + eem;
           const evDuration = evEndMins - evStartMins;
-          if (evDuration < HEAVY_THRESHOLD_MINS) return false;
+          
+          const isHeavy = e.isFrog || e.type === "frog" || e.projectBlockType === "deep" || e.type === "deep" || evDuration >= HEAVY_THRESHOLD_MINS;
+          if (!isHeavy) return false;
+          
           return Math.abs(newEndMins - evStartMins) <= 5 || Math.abs(evEndMins - newStartMins) <= 5;
         });
 

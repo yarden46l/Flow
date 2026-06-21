@@ -9,6 +9,10 @@ Failure to update this log during active development is a violation of the proje
 
 ## Historical Log
 
+### [2026-06-21] Feature: Delete Inbox Tasks
+- **`src/components/CaptureZone.tsx`:** Added `onDeleteItem?: (id: string) => void` prop to `CaptureZoneProps` and `DraggableInboxItem`. Each task card now renders a hover-reveal ✕ button (top-right, visible only on mouse-over) using `opacity-0 group-hover:opacity-100` transition. Clicking it shows a `window.confirm` guard before invoking the delete handler. The button uses `stopPropagation` to avoid triggering drag or tap handlers.
+- **`src/app/page.tsx`:** Added `handleDeleteInboxItem` — optimistically removes the task from local React state immediately (`setTasks` filter), then calls `deleteTask(id)` which removes from IndexedDB and Firestore. Imported `deleteTask` from `@/lib/db`. Passed `onDeleteItem={handleDeleteInboxItem}` to `<CaptureZone>`.
+
 ### [2026-06-21] Bug Fix: Optimistic Task Add (Enter Key)
 - **Root Cause (`src/app/page.tsx`):** When pressing Enter to add a new inbox task, the UI only updated via the Firestore `onSnapshot` callback. If Firestore rejected the write (permissions, network blip) or the round-trip was slow, the SDK would roll back the optimistic local write and fire `onSnapshot` without the new task — causing it to silently disappear.
 - **Fix:** Added an immediate optimistic `setTasks((prev) => [...prev, newItem])` call inside `handleAddInboxItem` before the async `addTask()` call. The task now appears in the UI instantly on Enter, and Firestore syncs in the background as before. If the server later reconciles, the `onSnapshot` listener normalises the state.

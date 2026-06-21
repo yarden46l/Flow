@@ -23,7 +23,7 @@ import { onAuthStateChanged, User, signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { format, isWeekend, parseISO, startOfWeek, addDays } from "date-fns";
 
-import { Task, subscribeToTasks, addTask, updateTask, seedDatabase, flushSyncQueue } from "@/lib/db";
+import { Task, subscribeToTasks, addTask, updateTask, deleteTask, seedDatabase, flushSyncQueue } from "@/lib/db";
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
@@ -191,6 +191,12 @@ export default function Home() {
       }));
       reviews.forEach((r) => addTask(r));
     }
+  };
+
+  const handleDeleteInboxItem = (id: string) => {
+    // Optimistically remove from local state immediately
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+    deleteTask(id);
   };
 
   const handleAddProject = (projectName: string) => {
@@ -744,6 +750,7 @@ export default function Home() {
               <CaptureZone
                 items={inboxItems}
                 onAddItem={handleAddInboxItem}
+                onDeleteItem={handleDeleteInboxItem}
                 onAddProject={handleAddProject}
                 onSeedDatabase={() => user && seedDatabase(user.uid)}
                 onItemTap={(item) => {

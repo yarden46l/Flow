@@ -43,6 +43,7 @@ interface CaptureZoneProps {
     batchTotal?: number,
     batchUnitName?: string,
   ) => void;
+  onDeleteItem?: (id: string) => void;
   onAddProject?: (projectName: string) => void;
   onSeedDatabase?: () => void;
   onItemTap?: (item: Task) => void;
@@ -55,10 +56,12 @@ interface CaptureZoneProps {
 function DraggableInboxItem({
   item,
   onItemTap,
+  onDeleteItem,
   isSprintMode,
 }: {
   item: Task;
   onItemTap?: (item: Task) => void;
+  onDeleteItem?: (id: string) => void;
   isSprintMode?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -151,10 +154,28 @@ function DraggableInboxItem({
           </div>
         </div>
 
-        {/* Age / Time ago */}
-        <span className="text-[10px] text-slate-400 font-mono self-start mt-0.5 whitespace-nowrap">
-          {item.createdAt}
-        </span>
+        {/* Age / Time ago + Delete */}
+        <div className="flex flex-col items-end gap-1 self-start shrink-0">
+          <span className="text-[10px] text-slate-400 font-mono mt-0.5 whitespace-nowrap">
+            {item.createdAt}
+          </span>
+          {onDeleteItem && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm(`Delete "${item.title}"?`)) {
+                  onDeleteItem(item.id);
+                }
+              }}
+              title="Delete task"
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Subtle glow border hover effect */}
@@ -167,6 +188,7 @@ function DraggableInboxItem({
 export default function CaptureZone({
   items,
   onAddItem,
+  onDeleteItem,
   onAddProject,
   onSeedDatabase,
   onItemTap,
@@ -423,6 +445,7 @@ export default function CaptureZone({
             key={item.id}
             item={item}
             onItemTap={onItemTap}
+            onDeleteItem={onDeleteItem}
             isSprintMode={isSprintMode}
           />
         ))}

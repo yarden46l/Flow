@@ -35,9 +35,9 @@ export interface Task {
   duration?: number;
   projectGroupId?: string;
   projectBlockType?: "deep" | "polish";
-  scheduledDay?: string; // "Wed", "Sat", etc.
-  startTime?: string;
-  endTime?: string;
+  scheduledDay?: string | null; // "Wed", "Sat", etc.
+  startTime?: string | null;
+  endTime?: string | null;
   type?: "fixed" | "frog" | "deep" | "polish" | "flex";
   colorClass?: string;
   description?: string;

@@ -37,6 +37,11 @@ export default function Home() {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<"day" | "week">("day");
 
+  // Settings State
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [primeWindowStart, setPrimeWindowStart] = useState("08:00");
+  const [primeWindowEnd, setPrimeWindowEnd] = useState("12:00");
+
   // Mobile & Fallback State
   const [mobileTab, setMobileTab] = useState<"inbox" | "calendar" | "focus">("inbox");
   const [activeMobileScheduleItem, setActiveMobileScheduleItem] = useState<Task | null>(null);
@@ -643,9 +648,10 @@ export default function Home() {
   const getDragOverlayContent = () => {
     if (!activeDragId) return null;
 
-    if (activeDragId.startsWith("inbox-item-")) {
-      const item = inboxItems.find((itm) => itm.id === activeDragId);
-      if (!item) return null;
+    const item = tasks.find((t) => t.id === activeDragId);
+    if (!item) return null;
+
+    if (item.status === "inbox") {
       return (
         <div className="flex gap-2.5 items-start p-3.5 bg-white border border-accent-violet rounded-lg shadow-xl opacity-90 cursor-grabbing select-none text-zinc-600">
           <div className="mt-1 text-zinc-400">
@@ -660,14 +666,8 @@ export default function Home() {
       );
     }
 
-    if (activeDragId.startsWith("event-")) {
-      let eventItem = weekdayEvents.find((evt) => evt.id === activeDragId);
-      if (!eventItem) {
-        eventItem = weekendEvents.find((evt) => evt.id === activeDragId);
-      }
-      if (!eventItem) return null;
-
-      const isFrog = eventItem.type === "frog";
+    if (item.status === "scheduled") {
+      const isFrog = item.type === "frog";
       return (
         <div
           className={`p-3 rounded-lg border shadow-xl opacity-95 w-80 text-left select-none ${isFrog
@@ -676,12 +676,12 @@ export default function Home() {
             }`}
         >
           <div className="flex items-start justify-between gap-2">
-            <h4 className="text-xs font-bold text-zinc-900 truncate">{eventItem.title}</h4>
+            <h4 className="text-xs font-bold text-zinc-900 truncate">{item.title}</h4>
             <span className="text-[10px] text-zinc-400 font-mono">
-              {eventItem.startTime} - {eventItem.endTime}
+              {item.startTime} - {item.endTime}
             </span>
           </div>
-          <p className="text-[10px] text-zinc-500 mt-1 truncate">{eventItem.description}</p>
+          <p className="text-[10px] text-zinc-500 mt-1 truncate">{item.description}</p>
         </div>
       );
     }
@@ -770,6 +770,16 @@ export default function Home() {
               EOD Reflection
             </button>
             <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="ml-2 px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors shadow-sm"
+              title="Settings"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+            <button
               onClick={() => signOut(auth)}
               className="ml-2 px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
             >
@@ -830,6 +840,8 @@ export default function Home() {
                 setViewMode={setViewMode}
                 onSelectEvent={(event) => setActiveEventId(event.id)}
                 activeEventId={activeEventId}
+                primeWindowStart={primeWindowStart}
+                primeWindowEnd={primeWindowEnd}
               />
             </section>
 
@@ -1008,6 +1020,57 @@ export default function Home() {
                 className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm shadow-indigo-500/20 transition-all"
               >
                 Add 15-min Buffer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── Settings Modal ─────────────────────────────── */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[80] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-bold text-lg text-slate-900">Settings</h3>
+              <button onClick={() => setIsSettingsOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Prime Deep Work Window</label>
+                <p className="text-xs text-slate-500 mb-3">Define your peak cognitive hours. This visual indicator helps you protect your best time for deep work.</p>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Start Time</label>
+                    <input
+                      type="time"
+                      value={primeWindowStart}
+                      onChange={(e) => setPrimeWindowStart(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm font-medium text-slate-900 focus:outline-none focus:border-accent-violet focus:ring-1 focus:ring-accent-violet/30 transition-all shadow-sm"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">End Time</label>
+                    <input
+                      type="time"
+                      value={primeWindowEnd}
+                      onChange={(e) => setPrimeWindowEnd(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm font-medium text-slate-900 focus:outline-none focus:border-accent-violet focus:ring-1 focus:ring-accent-violet/30 transition-all shadow-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 flex justify-end">
+              <button
+                onClick={() => setIsSettingsOpen(false)}
+                className="px-5 py-2 text-sm font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl shadow-sm transition-all"
+              >
+                Done
               </button>
             </div>
           </div>

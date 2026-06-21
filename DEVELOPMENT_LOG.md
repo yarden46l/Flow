@@ -33,7 +33,8 @@ Skipping the GitHub sync step is a violation of this protocol. No exceptions.
 - **Offline Sync Queue Reliability:** Fixed a cascading failure bug in `db.ts`'s `flushSyncQueue` by strictly breaking the iteration loop upon network/firebase errors. This ensures chronological `[ADD, UPDATE]` order is strictly preserved, preventing "Document not found" Firebase errors when the network drops mid-sync.
   - Wired the Pomodoro timer's checkmark (✓) button to a new `onCompleteTask` prop. Clicking it instantly archives the task in local state, clears the active execution panel, and updates Firestore in the background.
 - **Optimistic Inbox Capture:** Pressing Enter in the Inbox now instantly renders the new task card before waiting for network confirmation.
-
+- **Drag-and-Drop UX Fix:** Fixed a bug where dragging a scheduled task from the Time Block Canvas back into the Inbox would display an invisible (null) drag overlay. `getDragOverlayContent` now queries the unified `tasks` array instead of just `inboxItems`.
+- **Prime Deep Work Settings:** Added a configurable settings modal to set the Start and End time of the Prime Deep Work window. The visual glow indicator in the Time Block Canvas now dynamically adjusts based on these user settings.
 ### [2026-06-20] Phase 14: Calendar Pagination & View Modes
 - **Date Handling & Navigation**: Introduced `date-fns` for robust ISO date handling. Replaced static abstract days (`"Wed"`) with absolute ISO strings (`"yyyy-MM-dd"`) across the application (`page.tsx`, `db.ts`).
 - **Dynamic Date Ribbon**: The horizontal day selector in `TimeBlockCanvas` now dynamically generates the 7 days of the current week relative to a `currentDate` state. 

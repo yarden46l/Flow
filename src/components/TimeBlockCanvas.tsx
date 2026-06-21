@@ -16,6 +16,8 @@ interface TimeBlockCanvasProps {
   setViewMode: (mode: "day" | "week") => void;
   onSelectEvent?: (event: Task) => void;
   activeEventId?: string | null;
+  primeWindowStart?: string;
+  primeWindowEnd?: string;
 }
 
 // Droppable Hourly Row Component
@@ -195,6 +197,8 @@ export default function TimeBlockCanvas({
   setViewMode,
   onSelectEvent,
   activeEventId,
+  primeWindowStart = "08:00",
+  primeWindowEnd = "12:00",
 }: TimeBlockCanvasProps) {
   // Navigation
   const handlePrev = () => {
@@ -388,12 +392,27 @@ export default function TimeBlockCanvas({
         ) : (
           /* Weekday strict Focus Day View */
           <div className="flex-1 flex gap-4 min-h-[700px] border border-slate-200 rounded-2xl bg-white p-4 relative shadow-sm">
-            {/* Deep Work Prime Hour Glow Indicator (08:00 - 12:00) */}
-            <div className="absolute left-[70px] right-4 top-[11.76%] bottom-[64.7%] bg-indigo-50/30 border-y border-dashed border-accent-violet/10 rounded-lg pointer-events-none flex items-center justify-end pr-4 select-none">
-              <span className="text-[9px] font-bold uppercase tracking-widest text-accent-violet/30 writing-mode-vertical">
-                Prime Deep Work Window
-              </span>
-            </div>
+            {/* Deep Work Prime Hour Glow Indicator */}
+            {primeWindowStart && primeWindowEnd && (() => {
+              const [startH, startM] = primeWindowStart.split(":").map(Number);
+              const [endH, endM] = primeWindowEnd.split(":").map(Number);
+              const startMinutes = (startH - 6) * 60 + startM;
+              const endMinutes = (endH - 6) * 60 + endM;
+              const totalMinutes = 17 * 60;
+              const top = Math.max(0, (startMinutes / totalMinutes) * 100);
+              const height = Math.max(0, ((endMinutes - startMinutes) / totalMinutes) * 100);
+              
+              return (
+                <div 
+                  className="absolute left-[70px] right-4 bg-indigo-50/30 border-y border-dashed border-accent-violet/10 rounded-lg pointer-events-none flex items-center justify-end pr-4 select-none"
+                  style={{ top: `${top}%`, height: `${height}%` }}
+                >
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-accent-violet/30 writing-mode-vertical">
+                    Prime Deep Work Window
+                  </span>
+                </div>
+              );
+            })()}
 
             {/* Time Column */}
             <div className="w-12 flex flex-col justify-between text-[11px] font-semibold text-slate-400 font-mono pr-2 select-none">

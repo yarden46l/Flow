@@ -81,31 +81,36 @@ export interface Task {
 const TASKS_COLLECTION = "tasks";
 
 export const subscribeToTasks = (userId: string, callback: (tasks: Task[]) => void) => {
-  // 1. Instantly return local cached tasks for optimistic fast-boot
+  // 1. Instantly return local cached tasks for fast-boot
   getLocalTasks(userId).then((localTasks) => {
     if (localTasks && localTasks.length > 0) {
       callback(localTasks);
     }
   });
 
-  // 2. Setup Firebase listener
+  // 2. Setup Firebase real-time listener
   const q = query(
     collection(db, TASKS_COLLECTION),
     where("userId", "==", userId)
   );
-  
+
   return onSnapshot(q, (snapshot) => {
     const tasks: Task[] = [];
     snapshot.forEach((docSnap) => {
       tasks.push(docSnap.data() as Task);
     });
-    // Wipe local cache for this user and rewrite to ensure no stale data remains
-    clearUserTasks(userId).then(() => {
-      saveLocalTasksBatch(tasks).then(() => {
-        // Fire callback again with fresh synchronized data
-        callback(tasks);
-      });
-    });
+
+    // ── CRITICAL: call callback IMMEDIATELY so React state is never blocked
+    // by the async IDB chain. Previously this was inside the IDB .then() chain,
+    // which caused a delay that overwrote optimistic state updates.
+    callback(tasks);
+
+    // Sync IDB in the background (non-blocking)
+    clearUserTasks(userId)
+      .then(() => saveLocalTasksBatch(tasks))
+      .catch((err) => console.error("[Flow] IDB sync error:", err));
+  }, (err) => {
+    console.error("[Flow] Firestore onSnapshot error:", err);
   });
 };
 
@@ -116,14 +121,19 @@ export const addTask = async (task: Task) => {
   await saveLocalTask(task);
 
   if (typeof navigator !== "undefined" && !navigator.onLine) {
-    // Offline mode: push to SyncQueue and return immediately
     await pushSyncAction({ type: "ADD", payload: task, timestamp: Date.now(), userId: task.userId });
     return;
   }
 
-  // Online mode: execute Firebase transaction
-  const docRef = doc(db, TASKS_COLLECTION, task.id);
-  await setDoc(docRef, task);
+  // Online mode: write to Firestore
+  try {
+    const docRef = doc(db, TASKS_COLLECTION, task.id);
+    await setDoc(docRef, task);
+  } catch (err) {
+    console.error("[Flow] Firestore addTask failed:", err);
+    // Re-throw so callers can handle if needed
+    throw err;
+  }
 };
 
 export const updateTask = async (id: string, updates: Partial<Task>) => {
@@ -137,15 +147,19 @@ export const updateTask = async (id: string, updates: Partial<Task>) => {
   }
 
   if (typeof navigator !== "undefined" && !navigator.onLine) {
-    // Offline mode: push to SyncQueue and return immediately
-    const userId = existingTask ? existingTask.userId : "unknown"; // best effort fallback
+    const userId = existingTask ? existingTask.userId : "unknown";
     await pushSyncAction({ type: "UPDATE", payload: { id, updates }, timestamp: Date.now(), userId });
     return;
   }
 
-  // Online mode: execute Firebase transaction
-  const docRef = doc(db, TASKS_COLLECTION, id);
-  await updateDoc(docRef, updates);
+  // Online mode: write to Firestore
+  try {
+    const docRef = doc(db, TASKS_COLLECTION, id);
+    await updateDoc(docRef, updates);
+  } catch (err) {
+    console.error("[Flow] Firestore updateTask failed:", err);
+    throw err;
+  }
 };
 
 export const deleteTask = async (id: string) => {

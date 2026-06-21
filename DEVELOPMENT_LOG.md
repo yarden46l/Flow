@@ -19,6 +19,11 @@ Skipping the GitHub sync step is a violation of this protocol. No exceptions.
 
 ## Historical Log
 
+### [2026-06-21] Bug Fix: Fundamental Firestore Listener Race Condition
+- **Root Cause (`src/lib/db.ts` — `subscribeToTasks`):** The `onSnapshot` callback was calling `callback(tasks)` (= `setTasks`) only AFTER an async chain: `clearUserTasks` → `saveLocalTasksBatch` → `callback`. This async delay meant the Firestore snapshot could overwrite all optimistic React state (`setTasks`) that was applied before the IDB chain completed — causing tasks to vanish after add, drags to appear to do nothing, and Smart Suggest to not reflect results.
+- **Fix:** `callback(tasks)` is now called **immediately** when `onSnapshot` fires, before any IDB operations. IDB sync (`clearUserTasks` → `saveLocalTasksBatch`) now runs as a non-blocking background operation with `.catch` error handling. An `onSnapshot` error handler was also added to surface Firestore listener failures in the console.
+- **Fix — Error Handling (`addTask` / `updateTask`):** Wrapped all `setDoc` / `updateDoc` calls in `try/catch` blocks. Firestore write failures are now logged to the console as `[Flow] Firestore addTask/updateTask failed: ...` to aid debugging (e.g., identifying Firestore security rule rejections).
+
 ### [2026-06-21] Bug Fix: Drag-to-Calendar & Smart Suggest Responsiveness
 - **Root Cause — Both bugs (`src/app/page.tsx`):** All task state mutations (drag scheduling, Smart Suggest auto-scheduling, drag back to inbox) only updated the UI via the Firestore `onSnapshot` round-trip. This caused drags to appear to do nothing and Smart Suggest to hang until Firestore responded (`await Promise.all(...)` was blocking the UI).
 - **Fix — Drag to Calendar (Case 1 & weekend):** Added optimistic `setTasks((prev) => prev.map(...))` immediately before each `updateTask` call. The task visually moves from inbox to the calendar slot the instant the drag ends.

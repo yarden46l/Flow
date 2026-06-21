@@ -36,7 +36,7 @@ function EmptyState() {
 }
 
 // ── Batch Processing Engine ────────────────────────────────────────────────────
-function BatchEngine({ task }: { task: Task }) {
+function BatchEngine({ task, onCompleteTask }: { task: Task; onCompleteTask?: (id: string) => void }) {
   const total     = task.batchTotal     ?? 10;
   const unit      = task.batchUnitName  ?? "items";
   const initial   = task.batchCompleted ?? 0;
@@ -50,10 +50,19 @@ function BatchEngine({ task }: { task: Task }) {
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
     const clampedCompleted = Math.min(completed, total);
-    updateTask(task.id, { batchCompleted: clampedCompleted });
+    
     if (clampedCompleted >= total && !isDone) {
       setIsDone(true);
-      updateTask(task.id, { isCompleted: true, completedAt: new Date().toISOString() });
+      updateTask(task.id, { batchCompleted: clampedCompleted });
+      setTimeout(() => {
+        if (onCompleteTask) {
+          onCompleteTask(task.id);
+        } else {
+          updateTask(task.id, { isCompleted: true, completedAt: new Date().toISOString(), status: "archived" });
+        }
+      }, 1500);
+    } else if (!isDone) {
+      updateTask(task.id, { batchCompleted: clampedCompleted });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [completed]);
@@ -361,6 +370,6 @@ function PomodoroTimer({ activeTask, onCompleteTask }: { activeTask: Task; onCom
 // ── Root export ─────────────────────────────────────────────────────────
 export default function MicroExecutionPanel({ activeTask, onCompleteTask }: MicroExecutionPanelProps) {
   if (!activeTask) return <EmptyState />;
-  if (activeTask.isBatchTask) return <BatchEngine task={activeTask} />;
+  if (activeTask.isBatchTask) return <BatchEngine task={activeTask} onCompleteTask={onCompleteTask} />;
   return <PomodoroTimer activeTask={activeTask} onCompleteTask={onCompleteTask} />;
 }

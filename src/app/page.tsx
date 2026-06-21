@@ -199,6 +199,52 @@ export default function Home() {
     deleteTask(id);
   };
 
+  // ── Fixed Block (Anchor) creation ─────────────────────────────────────────
+  const handleAddFixedBlock = (
+    title: string,
+    startTime: string,
+    endTime: string,
+    dateStr?: string
+  ) => {
+    const [sh, sm] = startTime.split(":").map(Number);
+    const [eh, em] = endTime.split(":").map(Number);
+    const durationMins = (eh - sh) * 60 + (em - sm);
+    const day = dateStr || currentDateStr;
+    const newBlock: Task = {
+      id: `fixed-${Date.now()}`,
+      userId: user.uid,
+      title,
+      status: "scheduled" as const,
+      createdAt: new Date().toISOString(),
+      scheduledDay: day,
+      startTime,
+      endTime,
+      duration: durationMins,
+      type: "fixed" as const,
+      colorClass: "fixed",
+      isFixedAnchor: true,
+      description: "Fixed anchor block — non-draggable, acts as a scheduling boundary.",
+    };
+    // Optimistic update
+    setTasks((prev) => [...prev, newBlock]);
+    addTask(newBlock);
+  };
+
+  // ── Task Completion (from MicroExecutionPanel) ────────────────────────────
+  const handleCompleteTask = (taskId: string) => {
+    // Optimistically update React state immediately
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === taskId
+          ? { ...t, isCompleted: true, completedAt: new Date().toISOString(), status: "archived" as const }
+          : t
+      )
+    );
+    setActiveEventId(null);
+    // Persist to Firestore in background
+    updateTask(taskId, { isCompleted: true, completedAt: new Date().toISOString(), status: "archived" });
+  };
+
   const handleAddProject = (projectName: string) => {
     const projectGroupId = `proj-${Date.now()}`;
     const deepBlock: Task = {
@@ -236,19 +282,25 @@ export default function Home() {
    * iterates inbox items, assigns Frogs to the earliest pre-noon slot and
    * other items to the next available non-friction slot.
    */
-  const WEEKDAY_SLOTS: string[] = [
-    "07:00", "07:30", "08:00", "08:30", "09:00", "09:30",
-    "10:00", "10:30", "11:00", "11:30", "12:00", "12:30",
-    "13:00", "13:30", "14:00", "14:30", "15:00", "15:30",
-    "16:00", "16:30", "17:00", "17:30", "18:00", "18:30",
-    "19:00", "19:30", "20:00",
-  ];
+  // ── Smart Suggest ─────────────────────────────────────────────────────────
+  // 15-min granularity slots from 06:00 to 21:45 give the scheduler enough
+  // resolution to pack tasks without gaps from coarse 30-min boundaries.
+  const WEEKDAY_SLOT_START = 6 * 60;  // 06:00
+  const WEEKDAY_SLOT_END   = 22 * 60; // 22:00 (exclusive)
+  const SLOT_STEP = 15;
 
   const handleSmartSuggest = async () => {
     if (isSmartSuggestRunning || inboxItems.length === 0) return;
     setIsSmartSuggestRunning(true);
 
-    // 1. Run friction analysis on ALL tasks
+    // Guard: Smart Suggest is weekday-only
+    if (isWeekendDay) {
+      setIsSmartSuggestRunning(false);
+      window.alert("Smart Suggest respects Weekend Flexibility — deep work and Frog tasks are never auto-scheduled on weekends. Switch to a weekday to use Smart Suggest.");
+      return;
+    }
+
+    // 1. Run friction analysis
     const analysis = analyzeFriction(tasks);
     const frictionHours = new Set<number>();
     for (const zone of analysis.identifiedFrictionZones) {
@@ -257,10 +309,11 @@ export default function Home() {
       }
     }
 
-    // 2. Build a set of already-occupied minutes for the selected day
-    //    Fixed anchors are always included (they lock their window)
+    // 2. Build occupied-minutes set for today, including fixed anchors and
+    //    already-scheduled tasks. Use tasks state directly (not just weekdayEvents)
+    //    so optimistic updates from earlier drags are respected.
     const occupiedMinutes = new Set<number>();
-    for (const ev of weekdayEvents.filter((e) => e.scheduledDay === currentDateStr)) {
+    for (const ev of tasks.filter((t) => t.status === "scheduled" && t.scheduledDay === currentDateStr)) {
       if (!ev.startTime || !ev.endTime) continue;
       const [sh, sm] = ev.startTime.split(":").map(Number);
       const [eh, em] = ev.endTime.split(":").map(Number);
@@ -269,80 +322,92 @@ export default function Home() {
       }
     }
 
-    // helper: check if a time window is free of conflicts, friction, and energy routing
-    const isSlotAvailable = (startMins: number, durationMins: number, isFrogTask: boolean, energy?: Task["energyLevel"]): boolean => {
+    // 3. Slot availability checker
+    // Energy routing is advisory: if no ideal slot exists, fall back to any free slot.
+    const isSlotAvailable = (
+      startMins: number,
+      durationMins: number,
+      isFrogTask: boolean,
+      energy?: Task["energyLevel"],
+      strict = true // when false, ignore energy/friction constraints
+    ): boolean => {
       const startH = Math.floor(startMins / 60);
-      // Frog tasks must stay before noon
-      if (isFrogTask && startH >= 12) return false;
-      // Energy routing:
-      //   HIGH  → peak morning window 07:00–12:00 (can also share 08:00-12:00 prime block)
-      //   LOW   → afternoon/evening 13:00+
-      if (energy === "HIGH" && startH >= 12) return false;
-      if (energy === "LOW" && startH < 13) return false;
-      // Reject friction-zone slots for high-focus tasks (MEDIUM and HIGH)
-      if (energy !== "LOW" && frictionHours.has(startH)) return false;
-      for (let m = startMins; m < startMins + durationMins; m++) {
+      const endMins = startMins + durationMins;
+      if (endMins > WEEKDAY_SLOT_END) return false;     // would run past 22:00
+      if (isFrogTask && startH >= 12) return false;     // frogs always before noon
+      if (strict) {
+        if (energy === "HIGH" && startH >= 12) return false;
+        if (energy === "LOW"  && startH < 13) return false;
+        if (energy !== "LOW"  && frictionHours.has(startH)) return false;
+      }
+      for (let m = startMins; m < endMins; m++) {
         if (occupiedMinutes.has(m)) return false;
       }
       return true;
     };
 
-    // 3. Separate and order items: Frogs first, then others
-    //    Smart Suggest NEVER targets weekend days (Sat/Sun) for deep/frog work
-    if (isWeekendDay) {
-      setIsSmartSuggestRunning(false);
-      window.alert("Smart Suggest respects Weekend Flexibility — deep work and Frog tasks are never auto-scheduled on weekends. Switch to a weekday to use Smart Suggest.");
-      return;
-    }
-
-    // 3. Separate and order items: Frogs first, then others
-    const frogs = inboxItems.filter((t) => t.isFrog);
+    // 4. Order: Frogs first (must be placed before noon), then others
+    const frogs  = inboxItems.filter((t) => t.isFrog);
     const others = inboxItems.filter((t) => !t.isFrog);
     const ordered = [...frogs, ...others];
 
-    // 4. Assign each item to the earliest available slot
+    // 5. Assign slots — try strict energy routing first, fall back to any free slot
     const updates: Array<{ id: string; startTime: string; endTime: string; type: Task["type"]; colorClass: string }> = [];
 
     for (const item of ordered) {
       const durationMins = item.duration || 60;
       let scheduled = false;
 
-      for (const slot of WEEKDAY_SLOTS) {
-        const [sh, sm] = slot.split(":").map(Number);
-        const startMins = sh * 60 + sm;
+      // Two passes: pass 0 = strict (energy + friction), pass 1 = relaxed fallback
+      for (let pass = 0; pass <= 1 && !scheduled; pass++) {
+        const strict = pass === 0;
+        for (let startMins = WEEKDAY_SLOT_START; startMins < WEEKDAY_SLOT_END; startMins += SLOT_STEP) {
+          if (!isSlotAvailable(startMins, durationMins, !!item.isFrog, item.energyLevel, strict)) continue;
 
-        if (!isSlotAvailable(startMins, durationMins, !!item.isFrog, item.energyLevel)) continue;
+          // Mark window as occupied for subsequent items
+          for (let m = startMins; m < startMins + durationMins; m++) {
+            occupiedMinutes.add(m);
+          }
 
-        // Mark these minutes as occupied
-        for (let m = startMins; m < startMins + durationMins; m++) {
-          occupiedMinutes.add(m);
+          const endMins = Math.min(startMins + durationMins, 23 * 60 + 59);
+          const startH = Math.floor(startMins / 60);
+          const startM = startMins % 60;
+          const endH   = Math.floor(endMins / 60);
+          const endM   = endMins % 60;
+          const startTime = `${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}`;
+          const endTime   = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
+          const taskType: Task["type"] = item.isFrog ? "frog" : item.projectBlockType === "polish" ? "polish" : "deep";
+
+          updates.push({ id: item.id, startTime, endTime, type: taskType, colorClass: taskType ?? "deep" });
+          scheduled = true;
+          break;
         }
-
-        const endMins = Math.min(startMins + durationMins, 23 * 60 + 59);
-        const endH = Math.floor(endMins / 60);
-        const endM = endMins % 60;
-        const endTime = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
-        const taskType: Task["type"] = item.isFrog ? "frog" : item.projectBlockType === "polish" ? "polish" : "deep";
-
-        updates.push({ id: item.id, startTime: slot, endTime, type: taskType, colorClass: taskType ?? "deep" });
-        scheduled = true;
-        break;
       }
 
       if (!scheduled) {
-        console.warn(`[SmartSuggest] Could not find a slot for task: ${item.title}`);
+        console.warn(`[SmartSuggest] No available slot for: "${item.title}" (duration: ${durationMins}min)`);
       }
     }
 
-    // 5. Optimistically apply all updates to React state immediately
-    const scheduledMap = new Map(updates.map(({ id, startTime, endTime, type, colorClass }) => [
-      id,
-      { status: "scheduled" as const, scheduledDay: currentDateStr, startTime, endTime, type, colorClass, description: "Auto-scheduled by Smart Suggest (friction-aware)." },
-    ]));
+    // 6. Optimistically update React state immediately (no Firestore wait)
+    const scheduledMap = new Map(
+      updates.map(({ id, startTime, endTime, type, colorClass }) => [
+        id,
+        {
+          status: "scheduled" as const,
+          scheduledDay: currentDateStr,
+          startTime,
+          endTime,
+          type,
+          colorClass,
+          description: "Auto-scheduled by Smart Suggest (friction-aware).",
+        },
+      ])
+    );
     setTasks((prev) => prev.map((t) => scheduledMap.has(t.id) ? { ...t, ...scheduledMap.get(t.id) } : t));
     setIsSmartSuggestRunning(false);
 
-    // Fire Firestore writes in the background (non-blocking)
+    // 7. Persist to Firestore in background (non-blocking)
     updates.forEach(({ id, startTime, endTime, type, colorClass }) =>
       updateTask(id, {
         status: "scheduled",
@@ -584,6 +649,12 @@ export default function Home() {
       const startTime = `${String(newStartH).padStart(2, "0")}:${String(newStartM).padStart(2, "0")}`;
       const endTime = `${String(newEndH).padStart(2, "0")}:${String(newEndM).padStart(2, "0")}`;
 
+      // Optimistic UI update — task moves to new slot immediately
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === eventId ? { ...t, startTime, endTime, scheduledDay: targetDateStr } : t
+        )
+      );
       updateTask(eventId, { startTime, endTime, scheduledDay: targetDateStr });
     }
 
@@ -771,6 +842,7 @@ export default function Home() {
                 onSmartSuggest={handleSmartSuggest}
                 isSmartSuggestRunning={isSmartSuggestRunning}
                 isSprintMode={isSprintMode}
+                onAddFixedBlock={handleAddFixedBlock}
               />
             </section>
 
@@ -790,7 +862,7 @@ export default function Home() {
 
             {/* Right column (Micro-Execution Panel) */}
             <section className={`w-full md:w-1/4 ${mobileTab === 'focus' ? 'block' : 'hidden'} md:block h-full overflow-hidden`}>
-              <MicroExecutionPanel activeTask={activeTask} />
+              <MicroExecutionPanel activeTask={activeTask} onCompleteTask={handleCompleteTask} />
             </section>
           </main>
         )}

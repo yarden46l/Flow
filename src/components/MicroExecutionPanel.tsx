@@ -13,6 +13,7 @@ import { Task, updateTask } from "@/lib/db";
 
 interface MicroExecutionPanelProps {
   activeTask: Task | null;
+  onCompleteTask?: (taskId: string) => void;
 }
 
 // ── Timer constants ────────────────────────────────────────────────────────────
@@ -219,8 +220,8 @@ function BatchEngine({ task }: { task: Task }) {
   );
 }
 
-// ── Pomodoro Timer (unchanged logic) ──────────────────────────────────────────
-function PomodoroTimer({ activeTask }: { activeTask: Task }) {
+// ── Pomodoro Timer ─────────────────────────────────────────────────────────
+function PomodoroTimer({ activeTask, onCompleteTask }: { activeTask: Task; onCompleteTask?: (id: string) => void }) {
   const [mode, setMode]           = useState<"work" | "break">("work");
   const [timeLeft, setTimeLeft]   = useState(WORK_TIME);
   const [isRunning, setIsRunning] = useState(false);
@@ -325,7 +326,16 @@ function PomodoroTimer({ activeTask }: { activeTask: Task }) {
               )}
             </button>
             <button
-              onClick={() => { updateTask(activeTask.id, { isCompleted: true, completedAt: new Date().toISOString() }); resetTimer(); }}
+              onClick={() => {
+                // Complete task: update parent state optimistically, then reset timer
+                if (onCompleteTask) {
+                  onCompleteTask(activeTask.id);
+                } else {
+                  // Fallback: direct Firestore call if prop not passed
+                  updateTask(activeTask.id, { isCompleted: true, completedAt: new Date().toISOString(), status: "archived" });
+                }
+                resetTimer();
+              }}
               className="p-2.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 transition-colors shadow-sm"
               title="Mark Task Complete"
             >
@@ -348,9 +358,9 @@ function PomodoroTimer({ activeTask }: { activeTask: Task }) {
   );
 }
 
-// ── Root export ───────────────────────────────────────────────────────────────
-export default function MicroExecutionPanel({ activeTask }: MicroExecutionPanelProps) {
+// ── Root export ─────────────────────────────────────────────────────────
+export default function MicroExecutionPanel({ activeTask, onCompleteTask }: MicroExecutionPanelProps) {
   if (!activeTask) return <EmptyState />;
   if (activeTask.isBatchTask) return <BatchEngine task={activeTask} />;
-  return <PomodoroTimer activeTask={activeTask} />;
+  return <PomodoroTimer activeTask={activeTask} onCompleteTask={onCompleteTask} />;
 }

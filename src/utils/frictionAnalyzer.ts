@@ -90,7 +90,7 @@ const AFTERNOON_SLUMP_END = 16;
 // ---------------------------------------------------------------------------
 
 /** Parse "HH:MM" → hour integer (0–23).  Returns NaN on bad input. */
-function parseHour(timeStr: string | undefined): number {
+function parseHour(timeStr: string | null | undefined): number {
   if (!timeStr) return NaN;
   const parts = timeStr.split(":");
   const h = parseInt(parts[0], 10);

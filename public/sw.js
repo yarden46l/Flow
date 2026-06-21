@@ -33,6 +33,11 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  // Guard: ignore non-HTTP(S) requests (e.g. chrome-extension://, moz-extension://).
+  // The Cache API will throw a fatal TypeError for these schemes, which crashes
+  // the Service Worker and blocks Firestore sync.
+  if (!event.request.url.startsWith("http")) return;
+
   // Only handle GET requests
   if (event.request.method !== "GET") return;
 

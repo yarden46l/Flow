@@ -19,6 +19,10 @@ Skipping the GitHub sync step is a violation of this protocol. No exceptions.
 
 ## Historical Log
 
+### [2026-06-21] Bug Fix: Service Worker chrome-extension URL Crash
+- **Root Cause (`public/sw.js`):** The Service Worker's `fetch` listener intercepted all requests, including `chrome-extension://` scheme URLs injected by browser extensions. The Cache API does not support non-HTTP(S) schemes and throws `TypeError: Failed to execute 'put' on 'Cache': Request scheme 'chrome-extension' is unsupported`. This unhandled error crashed the SW, freezing drag-and-drop and blocking Firestore sync.
+- **Fix:** Added a guard clause as the very first line inside the `fetch` listener: `if (!event.request.url.startsWith('http')) return;`. This safely ignores `chrome-extension://`, `moz-extension://`, and any other non-HTTP(S) scheme before any Cache API calls are made.
+
 ### [2026-06-21] Bug Fix: Fundamental Firestore Listener Race Condition
 - **Root Cause (`src/lib/db.ts` — `subscribeToTasks`):** The `onSnapshot` callback was calling `callback(tasks)` (= `setTasks`) only AFTER an async chain: `clearUserTasks` → `saveLocalTasksBatch` → `callback`. This async delay meant the Firestore snapshot could overwrite all optimistic React state (`setTasks`) that was applied before the IDB chain completed — causing tasks to vanish after add, drags to appear to do nothing, and Smart Suggest to not reflect results.
 - **Fix:** `callback(tasks)` is now called **immediately** when `onSnapshot` fires, before any IDB operations. IDB sync (`clearUserTasks` → `saveLocalTasksBatch`) now runs as a non-blocking background operation with `.catch` error handling. An `onSnapshot` error handler was also added to surface Firestore listener failures in the console.

@@ -345,8 +345,10 @@ export const flushSyncQueue = async () => {
       }
     } catch (e) {
       console.error("Failed to sync action", action, e);
-      // We might break here to not sync out of order, or let it continue. 
-      // For now, continue but don't clear the failed action so it can retry later.
+      // CRITICAL: Break here to not sync out of order. If a previous action fails 
+      // (e.g. ADD), subsequent UPDATEs to the same doc will also fail. 
+      // The queue will be retried on next reconnect.
+      break;
     }
   }
 };

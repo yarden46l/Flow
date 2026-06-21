@@ -293,135 +293,144 @@ export default function Home() {
     if (isSmartSuggestRunning || inboxItems.length === 0) return;
     setIsSmartSuggestRunning(true);
 
-    // Guard: Smart Suggest is weekday-only
     if (isWeekendDay) {
       setIsSmartSuggestRunning(false);
       window.alert("Smart Suggest respects Weekend Flexibility — deep work and Frog tasks are never auto-scheduled on weekends. Switch to a weekday to use Smart Suggest.");
       return;
     }
 
-    // 1. Run friction analysis
-    const analysis = analyzeFriction(tasks);
-    const frictionHours = new Set<number>();
-    for (const zone of analysis.identifiedFrictionZones) {
-      for (let h = zone.startHour; h < zone.endHour; h++) {
-        frictionHours.add(h);
-      }
-    }
+    const DAY_START_MINS = 8 * 60; // 08:00
+    const DAY_END_MINS = 22 * 60; // 22:00
+    const INCREMENT = 15;
 
-    // 2. Build occupied-minutes set for today, including fixed anchors and
-    //    already-scheduled tasks. Use tasks state directly (not just weekdayEvents)
-    //    so optimistic updates from earlier drags are respected.
-    const occupiedMinutes = new Set<number>();
-    for (const ev of tasks.filter((t) => t.status === "scheduled" && t.scheduledDay === currentDateStr)) {
-      if (!ev.startTime || !ev.endTime) continue;
-      const [sh, sm] = ev.startTime.split(":").map(Number);
-      const [eh, em] = ev.endTime.split(":").map(Number);
-      for (let m = sh * 60 + sm; m < eh * 60 + em; m++) {
-        occupiedMinutes.add(m);
-      }
-    }
+    // 1. Get scheduled tasks
+    const scheduledTasks = tasks.filter((t) => t.status === "scheduled" && t.scheduledDay === currentDateStr);
 
-    // 3. Slot availability checker
-    // Energy routing is advisory: if no ideal slot exists, fall back to any free slot.
-    const isSlotAvailable = (
-      startMins: number,
-      durationMins: number,
-      isFrogTask: boolean,
-      energy?: Task["energyLevel"],
-      strict = true // when false, ignore energy/friction constraints
-    ): boolean => {
-      const startH = Math.floor(startMins / 60);
-      const endMins = startMins + durationMins;
-      if (endMins > WEEKDAY_SLOT_END) return false;     // would run past 22:00
-      if (isFrogTask && startH >= 12) return false;     // frogs always before noon
-      if (strict) {
-        if (energy === "HIGH" && startH >= 12) return false;
-        if (energy === "LOW"  && startH < 13) return false;
-        if (energy !== "LOW"  && frictionHours.has(startH)) return false;
-      }
-      for (let m = startMins; m < endMins; m++) {
-        if (occupiedMinutes.has(m)) return false;
-      }
-      return true;
-    };
+    // 2. Helper to find gaps
+    const findNextAvailableSlot = (durationMins: number, existingTasks: typeof scheduledTasks, isFrogTask: boolean, energy?: Task["energyLevel"]) => {
+      // Loop through the day in 15 min increments
+      for (let startMins = DAY_START_MINS; startMins <= DAY_END_MINS - durationMins; startMins += INCREMENT) {
+        const endMins = startMins + durationMins;
+        
+        // Apply Frog constraints (before noon)
+        if (isFrogTask && startMins >= 12 * 60) continue;
+        // Energy constraints
+        if (energy === "HIGH" && startMins >= 12 * 60) continue;
+        if (energy === "LOW" && startMins < 13 * 60) continue;
 
-    // 4. Order: Frogs first (must be placed before noon), then others
-    const frogs  = inboxItems.filter((t) => t.isFrog);
-    const others = inboxItems.filter((t) => !t.isFrog);
-    const ordered = [...frogs, ...others];
-
-    // 5. Assign slots — try strict energy routing first, fall back to any free slot
-    const updates: Array<{ id: string; startTime: string; endTime: string; type: Task["type"]; colorClass: string }> = [];
-
-    for (const item of ordered) {
-      const durationMins = item.duration || 60;
-      let scheduled = false;
-
-      // Two passes: pass 0 = strict (energy + friction), pass 1 = relaxed fallback
-      for (let pass = 0; pass <= 1 && !scheduled; pass++) {
-        const strict = pass === 0;
-        for (let startMins = WEEKDAY_SLOT_START; startMins < WEEKDAY_SLOT_END; startMins += SLOT_STEP) {
-          if (!isSlotAvailable(startMins, durationMins, !!item.isFrog, item.energyLevel, strict)) continue;
-
-          // Mark window as occupied for subsequent items
-          for (let m = startMins; m < startMins + durationMins; m++) {
-            occupiedMinutes.add(m);
+        // Check overlaps
+        let overlap = false;
+        for (const t of existingTasks) {
+          if (!t.startTime || !t.endTime) continue;
+          const [sh, sm] = t.startTime.split(":").map(Number);
+          const [eh, em] = t.endTime.split(":").map(Number);
+          const tStart = sh * 60 + sm;
+          const tEnd = eh * 60 + em;
+          
+          if (startMins < tEnd && endMins > tStart) {
+            overlap = true;
+            break;
           }
+        }
 
-          const endMins = Math.min(startMins + durationMins, 23 * 60 + 59);
-          const startH = Math.floor(startMins / 60);
-          const startM = startMins % 60;
-          const endH   = Math.floor(endMins / 60);
-          const endM   = endMins % 60;
-          const startTime = `${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}`;
-          const endTime   = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
-          const taskType: Task["type"] = item.isFrog ? "frog" : item.projectBlockType === "polish" ? "polish" : "deep";
-
-          updates.push({ id: item.id, startTime, endTime, type: taskType, colorClass: taskType ?? "deep" });
-          scheduled = true;
-          break;
+        if (!overlap) {
+          return startMins; // Found a free block
         }
       }
+      return null;
+    };
 
-      if (!scheduled) {
-        console.warn(`[SmartSuggest] No available slot for: "${item.title}" (duration: ${durationMins}min)`);
+    // 3. Prioritize: Frogs -> High Energy -> Everything else
+    const frogs = inboxItems.filter((t) => t.isFrog);
+    const highs = inboxItems.filter((t) => !t.isFrog && t.energyLevel === "HIGH");
+    const others = inboxItems.filter((t) => !t.isFrog && t.energyLevel !== "HIGH");
+    const ordered = [...frogs, ...highs, ...others];
+
+    const updatesToSave: Array<{ id: string; startTime: string; endTime: string; type: Task["type"]; colorClass: string }> = [];
+    const temporaryScheduledTasks = [...scheduledTasks];
+
+    // 4. Assign slots
+    for (const item of ordered) {
+      const durationMins = item.duration || 60;
+      
+      // Try strict matching first
+      let startMins = findNextAvailableSlot(durationMins, temporaryScheduledTasks, !!item.isFrog, item.energyLevel);
+      
+      // Relax energy constraints if strict fails
+      if (startMins === null && item.energyLevel) {
+        startMins = findNextAvailableSlot(durationMins, temporaryScheduledTasks, !!item.isFrog, undefined);
+      }
+
+      if (startMins !== null) {
+        const endMins = startMins + durationMins;
+        const sh = Math.floor(startMins / 60);
+        const sm = startMins % 60;
+        const eh = Math.floor(endMins / 60);
+        const em = endMins % 60;
+        const startTime = `${String(sh).padStart(2, "0")}:${String(sm).padStart(2, "0")}`;
+        const endTime = `${String(eh).padStart(2, "0")}:${String(em).padStart(2, "0")}`;
+        const taskType: Task["type"] = item.isFrog ? "frog" : item.projectBlockType === "polish" ? "polish" : item.type || "deep";
+
+        const updateParams = {
+          id: item.id,
+          startTime,
+          endTime,
+          type: taskType,
+          colorClass: taskType,
+        };
+
+        updatesToSave.push(updateParams);
+        
+        temporaryScheduledTasks.push({
+          ...item,
+          status: "scheduled",
+          scheduledDay: currentDateStr,
+          ...updateParams
+        });
+      } else {
+        console.warn(`[SmartSuggest] Could not find a slot for task: ${item.title}`);
       }
     }
 
-    // 6. Optimistically update React state immediately (no Firestore wait)
-    const scheduledMap = new Map(
-      updates.map(({ id, startTime, endTime, type, colorClass }) => [
-        id,
-        {
-          status: "scheduled" as const,
-          scheduledDay: currentDateStr,
-          startTime,
-          endTime,
-          type,
-          colorClass,
-          description: "Auto-scheduled by Smart Suggest (friction-aware).",
-        },
-      ])
-    );
-    setTasks((prev) => prev.map((t) => scheduledMap.has(t.id) ? { ...t, ...scheduledMap.get(t.id) } : t));
-    setIsSmartSuggestRunning(false);
+    // 5. Apply updates
+    if (updatesToSave.length > 0) {
+      const scheduledMap = new Map(updatesToSave.map(u => [u.id, u]));
+      
+      // Optimistic update
+      setTasks((prev) => prev.map((t) => {
+        if (scheduledMap.has(t.id)) {
+          const u = scheduledMap.get(t.id)!;
+          return {
+            ...t,
+            status: "scheduled" as const,
+            scheduledDay: currentDateStr,
+            startTime: u.startTime,
+            endTime: u.endTime,
+            type: u.type,
+            colorClass: u.colorClass,
+            description: "Auto-scheduled by Smart Suggest.",
+          };
+        }
+        return t;
+      }));
 
-    // 7. Persist to Firestore in background (non-blocking)
-    updates.forEach(({ id, startTime, endTime, type, colorClass }) =>
-      updateTask(id, {
-        status: "scheduled",
-        scheduledDay: currentDateStr,
-        startTime,
-        endTime,
-        type,
-        colorClass,
-        description: "Auto-scheduled by Smart Suggest (friction-aware).",
-      })
-    );
+      // Background sync
+      updatesToSave.forEach((u) => {
+        updateTask(u.id, {
+          status: "scheduled",
+          scheduledDay: currentDateStr,
+          startTime: u.startTime,
+          endTime: u.endTime,
+          type: u.type,
+          colorClass: u.colorClass,
+          description: "Auto-scheduled by Smart Suggest.",
+        });
+      });
+    }
+
+    setIsSmartSuggestRunning(false);
   };
 
-  // Handle Drag End
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveDragId(null);
@@ -431,9 +440,27 @@ export default function Home() {
     const activeId = active.id as string;
     const overId = over.id as string;
 
-    // Case 1: Dragged from Inbox to Calendar time slot
-    if (activeId.startsWith("inbox-item-") && overId.startsWith("slot-")) {
-      const itemId = activeId;
+    const draggedTask = tasks.find((t) => t.id === activeId);
+    if (!draggedTask) return;
+
+    // Case 1: Dragged to Inbox (Un-scheduling)
+    if (overId === "inbox-zone") {
+      // Optimistic UI update
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === activeId
+            ? { ...t, status: "inbox" as const, scheduledDay: undefined, startTime: undefined, endTime: undefined }
+            : t
+        )
+      );
+      updateTask(activeId, { status: "inbox", scheduledDay: null, startTime: null, endTime: null });
+      return;
+    }
+
+    // Case 2 & 3: Dragged to Calendar (Scheduling or Rescheduling)
+    if (overId.startsWith("slot-")) {
+      // Fixed Anchor guard
+      if (draggedTask.isFixedAnchor) return;
 
       let targetDateStr = "";
       let targetSlot = "";
@@ -444,15 +471,12 @@ export default function Home() {
         targetDateStr = overId.replace("slot-weekend-", "");
       } else {
         const parts = overId.split("-");
-        // slot-2026-06-17-09:00
         targetSlot = parts.pop()!;
         targetDateStr = parts.slice(1).join("-");
       }
 
-      const draggedItem = inboxItems.find((item) => item.id === itemId);
-      if (!draggedItem) return;
-
       if (isWeekendDrop) {
+        if (draggedTask.status === "scheduled" && draggedTask.scheduledDay === targetDateStr) return;
         const updates = {
           status: "scheduled" as const,
           scheduledDay: targetDateStr,
@@ -462,207 +486,119 @@ export default function Home() {
           colorClass: "flex",
           description: "Flexible weekend buffer item. Self-directed scheduling.",
         };
-        // Optimistic UI update
-        setTasks((prev) => prev.map((t) => t.id === itemId ? { ...t, ...updates } : t));
-        updateTask(itemId, updates);
-      } else {
-        const [hourStr, minStr] = targetSlot.split(":");
-        const startH = Number(hourStr);
-        const startM = Number(minStr);
-
-        // 1. Frog Validation
-        if (draggedItem.isFrog && startH >= 12) {
-          window.alert("Frogs must be eaten in the morning! Please schedule before 12:00 PM.");
-          return;
-        }
-
-        // 1b. Fixed-Anchor Overlap Guard
-        const durationMinsEarly = draggedItem.duration || 60;
-        const newStartMins = startH * 60 + startM;
-        const newEndMins = newStartMins + durationMinsEarly;
-        const overlapsAnchor = weekdayEvents
-          .filter((e) => e.scheduledDay === targetDateStr && e.isFixedAnchor)
-          .some((anchor) => {
-            if (!anchor.startTime || !anchor.endTime) return false;
-            const [ash, asm] = anchor.startTime.split(":").map(Number);
-            const [aeh, aem] = anchor.endTime.split(":").map(Number);
-            const anchorStart = ash * 60 + asm;
-            const anchorEnd = aeh * 60 + aem;
-            return newStartMins < anchorEnd && newEndMins > anchorStart;
-          });
-        if (overlapsAnchor) {
-          window.alert("That time slot is blocked by a Fixed Anchor (immutable event). Please choose a different time.");
-          return;
-        }
-
-        // 2. 4:2 Splitter Validation
-        if (draggedItem.projectBlockType === "polish") {
-          const deepBlock = weekdayEvents.find(
-            (e) => e.projectGroupId === draggedItem.projectGroupId && e.projectBlockType === "deep"
-          );
-          if (!deepBlock) {
-            window.alert("You must schedule the Deep Work (4h) block before the Polish (2h) block.");
-            return;
-          }
-          if (deepBlock.endTime) {
-            const [deepEndH, deepEndM] = deepBlock.endTime.split(":").map(Number);
-            const deepEndMinutes = deepEndH * 60 + deepEndM;
-            const targetMinutes = startH * 60 + startM;
-            if (targetMinutes < deepEndMinutes) {
-              window.alert("The Polish (2h) block must start after the Deep Work block finishes.");
-              return;
-            }
-          }
-        }
-
-        const durationMins = draggedItem.duration || 60;
-        const totalEndMins = Math.min(startH * 60 + startM + durationMins, 23 * 60 + 59);
-        const endH = Math.floor(totalEndMins / 60);
-        const endM = totalEndMins % 60;
-
-        const startTime = `${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}`;
-        const endTime = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
-
-        // 3. Cognitive Load Warning
-        const HIGH_FOCUS_TYPES: Array<Task["type"]> = ["frog", "deep"];
-        const HEAVY_THRESHOLD_MINS = 120;
-        const taskEndMins = startH * 60 + startM + durationMins;
-
-        const adjacentHeavyBlock = weekdayEvents
-          .filter((e) => e.scheduledDay === targetDateStr && HIGH_FOCUS_TYPES.includes(e.type))
-          .find((e) => {
-            if (!e.startTime || !e.endTime) return false;
-            const [esh, esm] = e.startTime.split(":").map(Number);
-            const [eeh, eem] = e.endTime.split(":").map(Number);
-            const evStartMins = esh * 60 + esm;
-            const evEndMins = eeh * 60 + eem;
-            const evDuration = evEndMins - evStartMins;
-            if (evDuration < HEAVY_THRESHOLD_MINS) return false;
-            return (
-              Math.abs(taskEndMins - evStartMins) <= 5 ||
-              Math.abs(evEndMins - (startH * 60 + startM)) <= 5
-            );
-          });
-
-        if (adjacentHeavyBlock && (draggedItem.isFrog || draggedItem.projectBlockType === "deep" || durationMins >= HEAVY_THRESHOLD_MINS)) {
-          setCognitiveWarning({
-            pendingUpdate: { id: itemId, startTime, endTime, scheduledDay: targetDateStr },
-            message: `Stacking "${draggedItem.title}" directly after "${adjacentHeavyBlock.title}" creates ${Math.round((durationMins + ((Number(adjacentHeavyBlock.endTime?.split(":")[0]) - Number(adjacentHeavyBlock.startTime?.split(":")[0])) * 60)) / 60 * 10) / 10}h of uninterrupted high-concentration work. A 15-minute buffer is strongly recommended.`,
-          });
-          return;
-        }
-
-        const taskType = draggedItem.isFrog ? "frog" : draggedItem.projectBlockType === "polish" ? "polish" : "deep";
-        const scheduledUpdates = {
-          status: "scheduled" as const,
-          scheduledDay: targetDateStr,
-          startTime,
-          endTime,
-          type: taskType as Task["type"],
-          colorClass: taskType,
-          description: "Structured work scheduled from Capture Inbox.",
-        };
-        // Optimistic UI update — task moves to calendar immediately
-        setTasks((prev) => prev.map((t) => t.id === itemId ? { ...t, ...scheduledUpdates } : t));
-        updateTask(itemId, scheduledUpdates);
-      }
-    }
-
-    // Case 2: Dragged existing Calendar Event to another Calendar time slot (Rescheduling)
-    else if (activeId.startsWith("event-") && overId.startsWith("slot-")) {
-      const eventId = activeId;
-
-      let targetDateStr = "";
-      let targetSlot = "";
-      let isWeekendDrop = false;
-
-      if (overId.startsWith("slot-weekend-")) {
-        isWeekendDrop = true;
-        targetDateStr = overId.replace("slot-weekend-", "");
-      } else {
-        const parts = overId.split("-");
-        targetSlot = parts.pop()!;
-        targetDateStr = parts.slice(1).join("-");
-      }
-
-      if (isWeekendDrop) {
-        // In weekend mode, items are list-based flex items, dragging to grid isn't active
+        setTasks((prev) => prev.map((t) => (t.id === activeId ? { ...t, ...updates } : t)));
+        updateTask(activeId, updates);
         return;
       }
 
-      const evt = weekdayEvents.find((e) => e.id === eventId);
-      if (!evt || !evt.startTime || !evt.endTime) return;
-
-      // Fixed Anchor guard — silently abort, the card is visually locked already
-      if (evt.isFixedAnchor) return;
-
-      const [newStartH, newStartM] = targetSlot.split(":").map(Number);
-      const newStartMinutes = newStartH * 60 + newStartM;
+      const [startH, startM] = targetSlot.split(":").map(Number);
 
       // 1. Frog Validation
-      if (evt.type === "frog" && newStartH >= 12) {
+      if (draggedTask.isFrog && startH >= 12) {
         window.alert("Frogs must be eaten in the morning! Please schedule before 12:00 PM.");
         return;
       }
 
+      const durationMins = draggedTask.duration || 60;
+      const newStartMins = startH * 60 + startM;
+      const newEndMins = newStartMins + durationMins;
+
+      // 1b. Fixed-Anchor Overlap Guard
+      const overlapsAnchor = tasks
+        .filter((e) => e.status === "scheduled" && e.scheduledDay === targetDateStr && e.isFixedAnchor && e.id !== activeId)
+        .some((anchor) => {
+          if (!anchor.startTime || !anchor.endTime) return false;
+          const [ash, asm] = anchor.startTime.split(":").map(Number);
+          const [aeh, aem] = anchor.endTime.split(":").map(Number);
+          const anchorStart = ash * 60 + asm;
+          const anchorEnd = aeh * 60 + aem;
+          return newStartMins < anchorEnd && newEndMins > anchorStart;
+        });
+
+      if (overlapsAnchor) {
+        window.alert("That time slot is blocked by a Fixed Anchor. Please choose a different time.");
+        return;
+      }
+
       // 2. 4:2 Splitter Validation
-      if (evt.projectBlockType === "polish") {
-        const deepBlock = weekdayEvents.find(
-          (e) => e.projectGroupId === evt.projectGroupId && e.projectBlockType === "deep"
+      if (draggedTask.projectBlockType === "polish") {
+        const deepBlock = tasks.find(
+          (e) =>
+            e.status === "scheduled" &&
+            e.scheduledDay === targetDateStr &&
+            e.projectGroupId === draggedTask.projectGroupId &&
+            e.projectBlockType === "deep"
         );
         if (deepBlock && deepBlock.endTime) {
           const [deepEndH, deepEndM] = deepBlock.endTime.split(":").map(Number);
           const deepEndMinutes = deepEndH * 60 + deepEndM;
-          if (newStartMinutes < deepEndMinutes) {
+          if (newStartMins < deepEndMinutes) {
             window.alert("The Polish (2h) block must start after the Deep Work block finishes.");
             return;
           }
         }
-      } else if (evt.projectBlockType === "deep") {
-        const polishBlock = weekdayEvents.find(
-          (e) => e.projectGroupId === evt.projectGroupId && e.projectBlockType === "polish"
+      } else if (draggedTask.projectBlockType === "deep") {
+        const polishBlock = tasks.find(
+          (e) =>
+            e.status === "scheduled" &&
+            e.scheduledDay === targetDateStr &&
+            e.projectGroupId === draggedTask.projectGroupId &&
+            e.projectBlockType === "polish"
         );
         if (polishBlock && polishBlock.startTime) {
-          const [startH, startM] = evt.startTime.split(":").map(Number);
-          const [endH, endM] = evt.endTime.split(":").map(Number);
-          const durationMins = (endH - startH) * 60 + (endM - startM);
-          const newEndMinutes = newStartMinutes + durationMins;
-
           const [polishStartH, polishStartM] = polishBlock.startTime.split(":").map(Number);
           const polishStartMinutes = polishStartH * 60 + polishStartM;
-
-          if (newEndMinutes > polishStartMinutes) {
+          if (newEndMins > polishStartMinutes) {
             window.alert("The Deep Work block cannot end after the scheduled Polish block starts.");
             return;
           }
         }
       }
 
-      const [startH, startM] = evt.startTime.split(":").map(Number);
-      const [endH, endM] = evt.endTime.split(":").map(Number);
-      const durationMins = (endH - startH) * 60 + (endM - startM);
+      const endH = Math.floor(newEndMins / 60);
+      const endM = newEndMins % 60;
 
-      const newEndMinutes = Math.min(newStartMinutes + durationMins, 23 * 60 + 59);
-      const newEndH = Math.floor(newEndMinutes / 60);
-      const newEndM = newEndMinutes % 60;
+      const startTime = `${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}`;
+      const endTime = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
 
-      const startTime = `${String(newStartH).padStart(2, "0")}:${String(newStartM).padStart(2, "0")}`;
-      const endTime = `${String(newEndH).padStart(2, "0")}:${String(newEndM).padStart(2, "0")}`;
+      const taskType = draggedTask.isFrog ? "frog" : draggedTask.projectBlockType === "polish" ? "polish" : draggedTask.type || "deep";
 
-      // Optimistic UI update — task moves to new slot immediately
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === eventId ? { ...t, startTime, endTime, scheduledDay: targetDateStr } : t
-        )
-      );
-      updateTask(eventId, { startTime, endTime, scheduledDay: targetDateStr });
-    }
+      const scheduledUpdates = {
+        status: "scheduled" as const,
+        scheduledDay: targetDateStr,
+        startTime,
+        endTime,
+        type: taskType as Task["type"],
+        colorClass: taskType,
+      };
 
-    // Case 3: Dragged existing Calendar Event back to Inbox (Un-scheduling)
-    else if (activeId.startsWith("event-") && overId === "inbox-zone") {
+      // 3. Cognitive Load Warning
+      const HIGH_FOCUS_TYPES = ["frog", "deep"];
+      const HEAVY_THRESHOLD_MINS = 120;
+      const adjacentHeavyBlock = tasks
+        .filter((e) => e.status === "scheduled" && e.scheduledDay === targetDateStr && HIGH_FOCUS_TYPES.includes(e.type || "deep") && e.id !== activeId)
+        .find((e) => {
+          if (!e.startTime || !e.endTime) return false;
+          const [esh, esm] = e.startTime.split(":").map(Number);
+          const [eeh, eem] = e.endTime.split(":").map(Number);
+          const evStartMins = esh * 60 + esm;
+          const evEndMins = eeh * 60 + eem;
+          const evDuration = evEndMins - evStartMins;
+          if (evDuration < HEAVY_THRESHOLD_MINS) return false;
+          return Math.abs(newEndMins - evStartMins) <= 5 || Math.abs(evEndMins - newStartMins) <= 5;
+        });
+
+      if (adjacentHeavyBlock && (draggedTask.isFrog || draggedTask.projectBlockType === "deep" || durationMins >= HEAVY_THRESHOLD_MINS)) {
+        setCognitiveWarning({
+          pendingUpdate: { id: activeId, startTime, endTime, scheduledDay: targetDateStr },
+          message: `Stacking "${draggedTask.title}" directly after a heavy block creates high cognitive load. A 15-minute buffer is strongly recommended.`,
+        });
+        return;
+      }
+
       // Optimistic UI update
-      setTasks((prev) => prev.map((t) => t.id === activeId ? { ...t, status: "inbox" as const, scheduledDay: undefined, startTime: undefined, endTime: undefined } : t));
-      updateTask(activeId, { status: "inbox" });
+      setTasks((prev) => prev.map((t) => (t.id === activeId ? { ...t, ...scheduledUpdates } : t)));
+      updateTask(activeId, scheduledUpdates);
     }
   };
 

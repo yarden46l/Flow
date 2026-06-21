@@ -22,8 +22,9 @@ Skipping the GitHub sync step is a violation of this protocol. No exceptions.
 ### [2026-06-21] Phase 15: Core Stability & Task Management Polish
 - **Firestore Listener Race Condition (`src/lib/db.ts`):** Fixed a critical race condition where async IDB syncing delayed React's `setTasks`, causing UI state to be overwritten and tasks/drags to disappear. `onSnapshot` now triggers state updates immediately while IDB runs in the background. Added explicit error handling and console logging to surface Firestore security rule or write rejections.
 - **Service Worker Reliability (`public/sw.js`):** Added a URL scheme guard (`startsWith('http')`) to the fetch listener to prevent `chrome-extension://` requests from crashing the Cache API and blocking offline/online sync.
-- **Drag & Drop Responsiveness (`src/app/page.tsx`):** Implemented optimistic React state updates (`setTasks`) for all drag interactions (Inbox → Calendar, Rescheduling within Calendar, Calendar → Inbox) guaranteeing zero-latency UI feedback before Firestore round-trips.
+- **Drag & Drop Responsiveness (`src/app/page.tsx`):** Implemented optimistic React state updates (`setTasks`) for all drag interactions (Inbox → Calendar, Rescheduling within Calendar, Calendar → Inbox) guaranteeing zero-latency UI feedback before Firestore round-trips. Rewrote `handleDragEnd` to correctly use `tasks` state lookups instead of ID prefix checks (which broke when tasks moved).
 - **Smart Suggest Enhancements (`src/app/page.tsx`):**
+  - Completely rewrote the algorithm to use a deterministic gap-finding method `findNextAvailableSlot`.
   - Updated to evaluate available time slots at 15-minute granularity (06:00–22:00) for tighter packing.
   - Added a two-pass strategy: pass 0 applies strict energy/friction routing, pass 1 relaxes constraints to prevent tasks from becoming stuck when ideal slots are full.
   - Made the algorithm strictly non-blocking: it generates a schedule map, applies it optimistically to React state immediately, and fires background syncs (stops the loading spinner instantly).

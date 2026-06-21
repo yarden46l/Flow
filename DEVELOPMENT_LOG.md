@@ -1,9 +1,19 @@
 # Flow - Development Log
 
 ## Rules of Engagement (AI Instruction)
-**CRITICAL PROTOCOL:** From this moment forward, EVERY time a new feature is added, a bug is fixed, or a major logic change is implemented, this file MUST be updated simultaneously. 
-Each update must include a new timestamped entry explaining the exact changes made to the codebase. 
+**CRITICAL PROTOCOL — Documentation:** From this moment forward, EVERY time a new feature is added, a bug is fixed, or a major logic change is implemented, this file MUST be updated simultaneously.
+Each update must include a new timestamped entry explaining the exact changes made to the codebase.
 Failure to update this log during active development is a violation of the project's documentation protocol.
+
+**CRITICAL PROTOCOL — GitHub Sync:** EVERY time any code change is made — no matter how small (bug fix, feature, refactor, style tweak) — the changes MUST be committed and pushed to the `main` branch of the GitHub repository immediately after the change is applied.
+The required sequence for every change is:
+1. Make the code change
+2. Update this `DEVELOPMENT_LOG.md` with a timestamped entry
+3. `git add -A`
+4. `git commit -m "<type>: <short description>"`
+5. `git push origin main`
+
+Skipping the GitHub sync step is a violation of this protocol. No exceptions.
 
 ---
 

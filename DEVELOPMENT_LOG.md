@@ -29,6 +29,7 @@ Skipping the GitHub sync step is a violation of this protocol. No exceptions.
   - Added hover-reveal delete (✕) buttons with `window.confirm` guards to inbox items, allowing immediate removal of tasks.
 - **Cognitive Load Guard Fix:** Corrected an inconsistency in `page.tsx`'s drag-and-drop overlap detection where existing "frog" or "deep" blocks shorter than 120 minutes were incorrectly bypassing the cognitive load warning when another heavy task was dropped next to them.
 - **Batch Engine Execution Fix:** Wired `BatchEngine` to use the `onCompleteTask` prop in `MicroExecutionPanel.tsx`. Previously, finishing a batch task relied on a direct Firestore `updateTask` which broke optimistic UI completion. Now, it correctly unmounts via `handleCompleteTask` with a 1.5s delay to show the success state.
+- **Smart Suggest Friction Integration:** Fixed a bug where `handleSmartSuggest` documented that it used `frictionAnalyzer` but never actually called it. Updated the deterministic algorithm to perform a two-pass scheduling strategy: Pass 1 is strict (respects both Energy levels and avoids `FrictionZones`), and Pass 2 is relaxed to ensure all tasks find a slot.
   - Wired the Pomodoro timer's checkmark (✓) button to a new `onCompleteTask` prop. Clicking it instantly archives the task in local state, clears the active execution panel, and updates Firestore in the background.
 - **Optimistic Inbox Capture:** Pressing Enter in the Inbox now instantly renders the new task card before waiting for network confirmation.
 

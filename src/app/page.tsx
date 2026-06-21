@@ -321,9 +321,18 @@ export default function Home() {
 
     // 1. Get scheduled tasks
     const scheduledTasks = tasks.filter((t) => t.status === "scheduled" && t.scheduledDay === currentDateStr);
+    
+    // Friction Analysis: get identified friction zones to avoid during auto-scheduling
+    const { identifiedFrictionZones } = analyzeFriction(tasks);
 
     // 2. Helper to find gaps
-    const findNextAvailableSlot = (durationMins: number, existingTasks: typeof scheduledTasks, isFrogTask: boolean, energy?: Task["energyLevel"]) => {
+    const findNextAvailableSlot = (
+      durationMins: number, 
+      existingTasks: typeof scheduledTasks, 
+      isFrogTask: boolean, 
+      energy?: Task["energyLevel"],
+      avoidFrictionZones: boolean = false
+    ) => {
       // Loop through the day in 15 min increments
       for (let startMins = DAY_START_MINS; startMins <= DAY_END_MINS - durationMins; startMins += INCREMENT) {
         const endMins = startMins + durationMins;
@@ -333,6 +342,16 @@ export default function Home() {
         // Energy constraints
         if (energy === "HIGH" && startMins >= 12 * 60) continue;
         if (energy === "LOW" && startMins < 13 * 60) continue;
+        
+        // Friction Zone constraints
+        if (avoidFrictionZones) {
+          const overlapsFriction = identifiedFrictionZones.some(zone => {
+            const zStart = zone.startHour * 60;
+            const zEnd = zone.endHour * 60;
+            return startMins < zEnd && endMins > zStart;
+          });
+          if (overlapsFriction) continue;
+        }
 
         // Check overlaps
         let overlap = false;
@@ -369,12 +388,12 @@ export default function Home() {
     for (const item of ordered) {
       const durationMins = item.duration || 60;
       
-      // Try strict matching first
-      let startMins = findNextAvailableSlot(durationMins, temporaryScheduledTasks, !!item.isFrog, item.energyLevel);
+      // Try strict matching first (respects energy + avoids friction zones)
+      let startMins = findNextAvailableSlot(durationMins, temporaryScheduledTasks, !!item.isFrog, item.energyLevel, true);
       
-      // Relax energy constraints if strict fails
-      if (startMins === null && item.energyLevel) {
-        startMins = findNextAvailableSlot(durationMins, temporaryScheduledTasks, !!item.isFrog, undefined);
+      // Relax constraints if strict fails
+      if (startMins === null) {
+        startMins = findNextAvailableSlot(durationMins, temporaryScheduledTasks, !!item.isFrog, undefined, false);
       }
 
       if (startMins !== null) {

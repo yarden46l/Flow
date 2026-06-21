@@ -9,6 +9,11 @@ Failure to update this log during active development is a violation of the proje
 
 ## Historical Log
 
+### [2026-06-21] Bug Fix: Optimistic Task Add (Enter Key)
+- **Root Cause (`src/app/page.tsx`):** When pressing Enter to add a new inbox task, the UI only updated via the Firestore `onSnapshot` callback. If Firestore rejected the write (permissions, network blip) or the round-trip was slow, the SDK would roll back the optimistic local write and fire `onSnapshot` without the new task — causing it to silently disappear.
+- **Fix:** Added an immediate optimistic `setTasks((prev) => [...prev, newItem])` call inside `handleAddInboxItem` before the async `addTask()` call. The task now appears in the UI instantly on Enter, and Firestore syncs in the background as before. If the server later reconciles, the `onSnapshot` listener normalises the state.
+- **Code Style Cleanup (`src/app/page.tsx`):** Minor whitespace and formatting fixes (trailing spaces on blank lines, consistent template literal formatting) made alongside the bug fix.
+
 ### [2026-06-20] Phase 14: Calendar Pagination & View Modes
 - **Date Handling & Navigation**: Introduced `date-fns` for robust ISO date handling. Replaced static abstract days (`"Wed"`) with absolute ISO strings (`"yyyy-MM-dd"`) across the application (`page.tsx`, `db.ts`).
 - **Dynamic Date Ribbon**: The horizontal day selector in `TimeBlockCanvas` now dynamically generates the 7 days of the current week relative to a `currentDate` state. 

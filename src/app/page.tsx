@@ -57,7 +57,7 @@ export default function Home() {
     if (typeof navigator !== "undefined") {
       setIsOffline(!navigator.onLine);
     }
-    
+
     if (!user?.uid) {
       setTasks([]);
       return;
@@ -166,6 +166,10 @@ export default function Home() {
       userId: user.uid,
     };
 
+    // Optimistically update local React state immediately so the task appears
+    // without waiting for the Firestore onSnapshot round-trip.
+    setTasks((prev) => [...prev, newItem]);
+
     addTask(newItem);
 
     if (shouldTriggerSpacedRepetition(text)) {
@@ -268,7 +272,7 @@ export default function Home() {
       //   HIGH  → peak morning window 07:00–12:00 (can also share 08:00-12:00 prime block)
       //   LOW   → afternoon/evening 13:00+
       if (energy === "HIGH" && startH >= 12) return false;
-      if (energy === "LOW"  && startH < 13)  return false;
+      if (energy === "LOW" && startH < 13) return false;
       // Reject friction-zone slots for high-focus tasks (MEDIUM and HIGH)
       if (energy !== "LOW" && frictionHours.has(startH)) return false;
       for (let m = startMins; m < startMins + durationMins; m++) {
@@ -355,7 +359,7 @@ export default function Home() {
     // Case 1: Dragged from Inbox to Calendar time slot
     if (activeId.startsWith("inbox-item-") && overId.startsWith("slot-")) {
       const itemId = activeId;
-      
+
       let targetDateStr = "";
       let targetSlot = "";
       let isWeekendDrop = false;
@@ -387,7 +391,7 @@ export default function Home() {
         const [hourStr, minStr] = targetSlot.split(":");
         const startH = Number(hourStr);
         const startM = Number(minStr);
-        
+
         // 1. Frog Validation
         if (draggedItem.isFrog && startH >= 12) {
           window.alert("Frogs must be eaten in the morning! Please schedule before 12:00 PM.");
@@ -487,7 +491,7 @@ export default function Home() {
     // Case 2: Dragged existing Calendar Event to another Calendar time slot (Rescheduling)
     else if (activeId.startsWith("event-") && overId.startsWith("slot-")) {
       const eventId = activeId;
-      
+
       let targetDateStr = "";
       let targetSlot = "";
       let isWeekendDrop = false;
@@ -605,11 +609,10 @@ export default function Home() {
       const isFrog = eventItem.type === "frog";
       return (
         <div
-          className={`p-3 rounded-lg border shadow-xl opacity-95 w-80 text-left select-none ${
-            isFrog
+          className={`p-3 rounded-lg border shadow-xl opacity-95 w-80 text-left select-none ${isFrog
               ? "bg-white border-accent-frog"
               : "bg-white border-accent-violet"
-          }`}
+            }`}
         >
           <div className="flex items-start justify-between gap-2">
             <h4 className="text-xs font-bold text-zinc-900 truncate">{eventItem.title}</h4>
@@ -688,11 +691,10 @@ export default function Home() {
             {/* Sprint Mode Toggle */}
             <button
               onClick={() => setIsSprintMode((prev) => !prev)}
-              className={`ml-2 flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all duration-200 ${
-                isSprintMode
+              className={`ml-2 flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all duration-200 ${isSprintMode
                   ? "bg-amber-500 text-white border-amber-600 shadow-sm shadow-amber-500/30 animate-pulse"
                   : "bg-white text-slate-500 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-              }`}
+                }`}
               title={isSprintMode ? "Deactivate Sprint Mode" : "Activate Sprint Mode"}
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -754,25 +756,25 @@ export default function Home() {
               />
             </section>
 
-          {/* Center column (Time Block Canvas / Calendar) */}
-          <section className={`w-full md:w-2/4 ${mobileTab === 'calendar' ? 'block' : 'hidden'} md:block h-full overflow-hidden border-x border-slate-200`}>
-            <TimeBlockCanvas
-              weekdayEvents={weekdayEvents}
-              weekendEvents={weekendEvents}
-              currentDate={currentDate}
-              setCurrentDate={setCurrentDate}
-              viewMode={viewMode}
-              setViewMode={setViewMode}
-              onSelectEvent={(event) => setActiveEventId(event.id)}
-              activeEventId={activeEventId}
-            />
-          </section>
+            {/* Center column (Time Block Canvas / Calendar) */}
+            <section className={`w-full md:w-2/4 ${mobileTab === 'calendar' ? 'block' : 'hidden'} md:block h-full overflow-hidden border-x border-slate-200`}>
+              <TimeBlockCanvas
+                weekdayEvents={weekdayEvents}
+                weekendEvents={weekendEvents}
+                currentDate={currentDate}
+                setCurrentDate={setCurrentDate}
+                viewMode={viewMode}
+                setViewMode={setViewMode}
+                onSelectEvent={(event) => setActiveEventId(event.id)}
+                activeEventId={activeEventId}
+              />
+            </section>
 
-          {/* Right column (Micro-Execution Panel) */}
-          <section className={`w-full md:w-1/4 ${mobileTab === 'focus' ? 'block' : 'hidden'} md:block h-full overflow-hidden`}>
-            <MicroExecutionPanel activeTask={activeTask} />
-          </section>
-        </main>
+            {/* Right column (Micro-Execution Panel) */}
+            <section className={`w-full md:w-1/4 ${mobileTab === 'focus' ? 'block' : 'hidden'} md:block h-full overflow-hidden`}>
+              <MicroExecutionPanel activeTask={activeTask} />
+            </section>
+          </main>
         )}
       </div>
 
@@ -798,11 +800,11 @@ export default function Home() {
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <h3 className="font-bold text-lg mb-1 text-slate-900">Schedule Task</h3>
             <p className="text-sm text-slate-500 mb-6 truncate">{activeMobileScheduleItem.title}</p>
-            
+
             <div className="space-y-4 mb-8">
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Day</label>
-                <select 
+                <select
                   value={mobileScheduleDay}
                   onChange={(e) => setMobileScheduleDay(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm font-medium text-slate-900 focus:outline-none focus:border-accent-violet focus:ring-1 focus:ring-accent-violet/30 transition-all"
@@ -815,27 +817,27 @@ export default function Home() {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Time</label>
-                <input 
-                  type="time" 
+                <input
+                  type="time"
                   value={mobileScheduleTime}
                   onChange={(e) => setMobileScheduleTime(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm font-medium text-slate-900 focus:outline-none focus:border-accent-violet focus:ring-1 focus:ring-accent-violet/30 transition-all shadow-sm"
                 />
               </div>
             </div>
-            
+
             <div className="flex justify-end gap-3">
-              <button 
+              <button
                 onClick={() => setActiveMobileScheduleItem(null)}
                 className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={() => {
                   const itemId = activeMobileScheduleItem.id;
                   const isWeekendDay = mobileScheduleDay === "Sat" || mobileScheduleDay === "Sun";
-                  
+
                   if (isWeekendDay) {
                     updateTask(itemId, {
                       status: "scheduled",
@@ -850,7 +852,7 @@ export default function Home() {
                     const [startHStr, startMStr] = mobileScheduleTime.split(":");
                     const startH = Number(startHStr) || 9;
                     const startM = Number(startMStr) || 0;
-                    
+
                     const durationMins = activeMobileScheduleItem.duration || 60;
                     const totalEndMins = Math.min(startH * 60 + startM + durationMins, 23 * 60 + 59);
                     const endH = Math.floor(totalEndMins / 60);

@@ -334,22 +334,26 @@ export default function Home() {
       }
     }
 
-    // 5. Commit all updates
-    await Promise.all(
-      updates.map(({ id, startTime, endTime, type, colorClass }) =>
-        updateTask(id, {
-          status: "scheduled",
-          scheduledDay: currentDateStr,
-          startTime,
-          endTime,
-          type,
-          colorClass,
-          description: "Auto-scheduled by Smart Suggest (friction-aware).",
-        })
-      )
-    );
-
+    // 5. Optimistically apply all updates to React state immediately
+    const scheduledMap = new Map(updates.map(({ id, startTime, endTime, type, colorClass }) => [
+      id,
+      { status: "scheduled" as const, scheduledDay: currentDateStr, startTime, endTime, type, colorClass, description: "Auto-scheduled by Smart Suggest (friction-aware)." },
+    ]));
+    setTasks((prev) => prev.map((t) => scheduledMap.has(t.id) ? { ...t, ...scheduledMap.get(t.id) } : t));
     setIsSmartSuggestRunning(false);
+
+    // Fire Firestore writes in the background (non-blocking)
+    updates.forEach(({ id, startTime, endTime, type, colorClass }) =>
+      updateTask(id, {
+        status: "scheduled",
+        scheduledDay: currentDateStr,
+        startTime,
+        endTime,
+        type,
+        colorClass,
+        description: "Auto-scheduled by Smart Suggest (friction-aware).",
+      })
+    );
   };
 
   // Handle Drag End
@@ -384,15 +388,18 @@ export default function Home() {
       if (!draggedItem) return;
 
       if (isWeekendDrop) {
-        updateTask(itemId, {
-          status: "scheduled",
+        const updates = {
+          status: "scheduled" as const,
           scheduledDay: targetDateStr,
           startTime: "09:00",
           endTime: "17:00",
-          type: "flex",
+          type: "flex" as const,
           colorClass: "flex",
           description: "Flexible weekend buffer item. Self-directed scheduling.",
-        });
+        };
+        // Optimistic UI update
+        setTasks((prev) => prev.map((t) => t.id === itemId ? { ...t, ...updates } : t));
+        updateTask(itemId, updates);
       } else {
         const [hourStr, minStr] = targetSlot.split(":");
         const startH = Number(hourStr);
@@ -405,7 +412,6 @@ export default function Home() {
         }
 
         // 1b. Fixed-Anchor Overlap Guard
-        // Prevent dropping any task into a time window occupied by a Fixed Anchor
         const durationMinsEarly = draggedItem.duration || 60;
         const newStartMins = startH * 60 + startM;
         const newEndMins = newStartMins + durationMinsEarly;
@@ -452,9 +458,9 @@ export default function Home() {
         const startTime = `${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}`;
         const endTime = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
 
-        // 3. Cognitive Load Warning — detect back-to-back high-concentration blocks
+        // 3. Cognitive Load Warning
         const HIGH_FOCUS_TYPES: Array<Task["type"]> = ["frog", "deep"];
-        const HEAVY_THRESHOLD_MINS = 120; // 2 hours
+        const HEAVY_THRESHOLD_MINS = 120;
         const taskEndMins = startH * 60 + startM + durationMins;
 
         const adjacentHeavyBlock = weekdayEvents
@@ -467,7 +473,6 @@ export default function Home() {
             const evEndMins = eeh * 60 + eem;
             const evDuration = evEndMins - evStartMins;
             if (evDuration < HEAVY_THRESHOLD_MINS) return false;
-            // Check adjacency: new block ends right where existing starts, or vice-versa (within 5 min gap)
             return (
               Math.abs(taskEndMins - evStartMins) <= 5 ||
               Math.abs(evEndMins - (startH * 60 + startM)) <= 5
@@ -479,18 +484,22 @@ export default function Home() {
             pendingUpdate: { id: itemId, startTime, endTime, scheduledDay: targetDateStr },
             message: `Stacking "${draggedItem.title}" directly after "${adjacentHeavyBlock.title}" creates ${Math.round((durationMins + ((Number(adjacentHeavyBlock.endTime?.split(":")[0]) - Number(adjacentHeavyBlock.startTime?.split(":")[0])) * 60)) / 60 * 10) / 10}h of uninterrupted high-concentration work. A 15-minute buffer is strongly recommended.`,
           });
-          return; // Pause — wait for user decision
+          return;
         }
 
-        updateTask(itemId, {
-          status: "scheduled",
+        const taskType = draggedItem.isFrog ? "frog" : draggedItem.projectBlockType === "polish" ? "polish" : "deep";
+        const scheduledUpdates = {
+          status: "scheduled" as const,
           scheduledDay: targetDateStr,
           startTime,
           endTime,
-          type: draggedItem.isFrog ? "frog" : draggedItem.projectBlockType === "polish" ? "polish" : "deep",
-          colorClass: draggedItem.isFrog ? "frog" : draggedItem.projectBlockType === "polish" ? "polish" : "deep",
+          type: taskType as Task["type"],
+          colorClass: taskType,
           description: "Structured work scheduled from Capture Inbox.",
-        });
+        };
+        // Optimistic UI update — task moves to calendar immediately
+        setTasks((prev) => prev.map((t) => t.id === itemId ? { ...t, ...scheduledUpdates } : t));
+        updateTask(itemId, scheduledUpdates);
       }
     }
 
@@ -580,6 +589,8 @@ export default function Home() {
 
     // Case 3: Dragged existing Calendar Event back to Inbox (Un-scheduling)
     else if (activeId.startsWith("event-") && overId === "inbox-zone") {
+      // Optimistic UI update
+      setTasks((prev) => prev.map((t) => t.id === activeId ? { ...t, status: "inbox" as const, scheduledDay: undefined, startTime: undefined, endTime: undefined } : t));
       updateTask(activeId, { status: "inbox" });
     }
   };

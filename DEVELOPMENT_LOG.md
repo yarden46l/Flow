@@ -19,6 +19,12 @@ Skipping the GitHub sync step is a violation of this protocol. No exceptions.
 
 ## Historical Log
 
+### [2026-06-21] Bug Fix: Drag-to-Calendar & Smart Suggest Responsiveness
+- **Root Cause — Both bugs (`src/app/page.tsx`):** All task state mutations (drag scheduling, Smart Suggest auto-scheduling, drag back to inbox) only updated the UI via the Firestore `onSnapshot` round-trip. This caused drags to appear to do nothing and Smart Suggest to hang until Firestore responded (`await Promise.all(...)` was blocking the UI).
+- **Fix — Drag to Calendar (Case 1 & weekend):** Added optimistic `setTasks((prev) => prev.map(...))` immediately before each `updateTask` call. The task visually moves from inbox to the calendar slot the instant the drag ends.
+- **Fix — Drag back to Inbox (Case 3):** Same optimistic pattern — task moves back to inbox instantly without waiting for Firestore.
+- **Fix — Smart Suggest:** Replaced the blocking `await Promise.all(updates.map(updateTask))` with (1) an immediate optimistic `setTasks` using a pre-built Map of updates, followed by (2) non-blocking fire-and-forget `updates.forEach(updateTask)`. The spinner now stops as soon as the local state is updated; Firestore syncs in the background.
+
 ### [2026-06-21] Feature & Bug Fix: Task Management Improvements
 - **Feature — Delete Inbox Tasks (`src/components/CaptureZone.tsx`):** Added `onDeleteItem?: (id: string) => void` prop to `CaptureZoneProps` and `DraggableInboxItem`. Each task card now renders a hover-reveal ✕ button (top-right, visible only on mouse-over) using `opacity-0 group-hover:opacity-100` transition. Clicking it shows a `window.confirm` guard before invoking the delete handler. The button uses `stopPropagation` to avoid triggering drag or tap handlers.
 - **Feature — Delete Inbox Tasks (`src/app/page.tsx`):** Added `handleDeleteInboxItem` — optimistically removes the task from local React state immediately (`setTasks` filter), then calls `deleteTask(id)` which removes from IndexedDB and Firestore. Imported `deleteTask` from `@/lib/db`. Passed `onDeleteItem={handleDeleteInboxItem}` to `<CaptureZone>`.
